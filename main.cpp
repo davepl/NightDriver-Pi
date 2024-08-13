@@ -34,7 +34,7 @@ using rgb_matrix::FrameCanvas;
 volatile bool interrupt_received = false;
 static void InterruptHandler(int signo) 
 {
-	interrupt_received = true;
+    interrupt_received = true;
 }
 
 /*
@@ -61,9 +61,9 @@ void CopyImageToCanvas(const Magick::Image &image, Canvas *canvas) {
 
 int usage(const char *progname) 
 {
-	fprintf(stderr, "Usage: %s [led-matrix-options]\n", progname);
-	rgb_matrix::PrintMatrixFlags(stderr);
-	return 1;
+    fprintf(stderr, "Usage: %s [led-matrix-options]\n", progname);
+    rgb_matrix::PrintMatrixFlags(stderr);
+    return 1;
 }
 
 // Matrix Defaults
@@ -82,33 +82,33 @@ constexpr auto GPIOSlowdown    = 5;
 
 int main(int argc, char *argv[]) 
 {
-	// Initialize the RGB matrix with
-	RGBMatrix::Options matrix_options;
+    // Initialize the RGB matrix with
+    RGBMatrix::Options matrix_options;
 
-	matrix_options.hardware_mapping = HardwareMapping;
-	matrix_options.chain_length     = ChainLength;
-	matrix_options.rows             = Rows;
-	matrix_options.cols             = Columns;
+    matrix_options.hardware_mapping = HardwareMapping;
+    matrix_options.chain_length     = ChainLength;
+    matrix_options.rows             = Rows;
+    matrix_options.cols             = Columns;
 
-	rgb_matrix::RuntimeOptions runtime_opt;
-	if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv, &matrix_options, &runtime_opt)) 
-		return usage(argv[0]);
+    rgb_matrix::RuntimeOptions runtime_opt;
+    if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv, &matrix_options, &runtime_opt)) 
+        return usage(argv[0]);
 
-	runtime_opt.gpio_slowdown = GPIOSlowdown;
+    runtime_opt.gpio_slowdown = GPIOSlowdown;
 
-	signal(SIGTERM, InterruptHandler);
-	signal(SIGINT, InterruptHandler);
+    signal(SIGTERM, InterruptHandler);
+    signal(SIGINT, InterruptHandler);
 
-	RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
-	if (matrix == NULL)
-		return 1;
+    RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
+    if (matrix == NULL)
+        return 1;
 
-	matrix->Clear();
-	matrix->Fill(0, 0, 255);
+    matrix->Clear();
+    matrix->Fill(0, 0, 255);
 
-	while (!interrupt_received)
-		sleep(1);
+    while (!interrupt_received)
+        sleep(1);
 
-	delete matrix;
-	return 0;
+    delete matrix;
+    return 0;
 }
