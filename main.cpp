@@ -22,8 +22,11 @@
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
-
 #include <exception>
+#include "apptime.h"
+#include "globals.h"
+#include "ledbuffer.h"
+#include "socketserver.h"
 
 using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
@@ -66,22 +69,13 @@ int usage(const char *progname)
     return 1;
 }
 
-// Matrix Defaults
-//
-// Can be overridden from the command line
-
-constexpr auto HardwareMapping = "adafruit-hat";
-constexpr auto ChainLength     = 8;
-constexpr auto Rows            = 32;
-constexpr auto Columns         = 64;
-constexpr auto GPIOSlowdown    = 5;
-
 // main
 //
 // Main program entry point
 
 int main(int argc, char *argv[]) 
 {
+
     // Initialize the RGB matrix with
     RGBMatrix::Options matrix_options;
 
@@ -106,8 +100,11 @@ int main(int argc, char *argv[])
     matrix->Clear();
     matrix->Fill(0, 0, 255);
 
+    LEDBufferManager bufferManager(100);
+    SocketServer socketServer(49152);
+
     while (!interrupt_received)
-        sleep(1);
+        socketServer.ProcessIncomingConnectionsLoop(bufferManager);
 
     delete matrix;
     return 0;

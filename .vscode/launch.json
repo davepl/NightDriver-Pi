@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Remote Debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/dave/source/repos/NDPi/ndpi",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "/home/dave/source/repos/NDPi",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "pipeTransport": {
+                "pipeProgram": "ssh",
+                "pipeArgs": [
+                    "pi4-1g-01", 
+                    "-T"
+                ],
+                "debuggerPath": "/usr/bin/gdb"
+            },
+            "sourceFileMap": {
+                "/remote/source": "/local/source"
+            }
+        }
+    ]
+}
