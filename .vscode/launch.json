@@ -2,25 +2,41 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Remote Debug",
+            "name": "Remote Debug - C++ (SSH)",
             "type": "cppdbg",
             "request": "launch",
             "program": "/home/dave/source/repos/NDPi/ndpi",
             "args": [],
             "stopAtEntry": false,
             "cwd": "/home/dave/source/repos/NDPi",
+            "environment": [],
+            "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "/usr/bin/gdb",
+            "miDebuggerPath": "/usr/bin/gdb-multiarch", // or the path to your gdb on the remote system
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build", // Assuming you have a build task set up
+            "postDebugTask": "cleanup", // Optional cleanup task
+            "targetArchitecture": "arm",
             "pipeTransport": {
+                "pipeCwd": "",
                 "pipeProgram": "ssh",
                 "pipeArgs": [
-                    "pi4-1g-01", 
-                    "-T"
+                    "pi4-8g-01",
+                    "-T",
+                    "-p",
+                    "22"
                 ],
+                "pipeEnv": {},
                 "debuggerPath": "/usr/bin/gdb"
             },
             "sourceFileMap": {
-                "/remote/source": "/local/source"
+                "/home/dave/source/repos/NDPi": "${workspaceFolder}/src"
             }
         }
     ]
