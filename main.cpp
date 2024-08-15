@@ -103,8 +103,17 @@ int main(int argc, char *argv[])
     LEDBufferManager bufferManager(100);
     SocketServer socketServer(49152);
 
+    if (!socketServer.begin())
+    {
+		printf("Could not start socker server!");
+		exit(1);
+    }
+
     while (!interrupt_received)
+	{
+		printf("ProcessIncoming...\n");
         socketServer.ProcessIncomingConnectionsLoop(bufferManager);
+	}
 
     delete matrix;
     return 0;

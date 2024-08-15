@@ -179,7 +179,7 @@ bool SocketServer::ProcessIncomingConnectionsLoop(LEDBufferManager & bufferManag
                                         .oldestPacket = bufferManager.AgeOfOldestBuffer(),
                                         .newestPacket = bufferManager.AgeOfNewestBuffer(),
                                         .brightness   = 100,
-                                        .wifiSignal   = -1,
+                                        .wifiSignal   = 99,
                                         .bufferSize   = (uint32_t)bufferManager.Capacity(),
                                         .bufferPos    = (uint32_t)bufferManager.Size(),
                                         .fpsDrawing   = 0,

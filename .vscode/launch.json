@@ -27,7 +27,7 @@
                 "pipeCwd": "",
                 "pipeProgram": "ssh",
                 "pipeArgs": [
-                    "pi4-8g-01",
+                    "pi4-8g-02",
                     "-T",
                     "-p",
                     "22"
@@ -36,7 +36,7 @@
                 "debuggerPath": "/usr/bin/gdb"
             },
             "sourceFileMap": {
-                "/home/dave/source/repos/NDPi": "${workspaceFolder}/src"
+                "/home/dave/source/repos/NDPi": "${workspaceFolder}"
             }
         }
     ]
