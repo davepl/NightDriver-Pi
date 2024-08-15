@@ -84,7 +84,7 @@ class LEDBuffer
     //
     // Parse a frame from the WiFi data and return it as a constructed LEDBuffer object
     
-    std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<const uint8_t []> & payloadData, size_t payloadLength)   
+    static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
     {
         constexpr auto minimumPayloadLength = 24;
     
@@ -125,8 +125,8 @@ class LEDBuffer
 class LEDBufferManager
 {
     std::vector<std::unique_ptr<LEDBuffer>> _aptrBuffers;  // The circular array of buffer ptrs
-    size_t _iNextBuffer;                                 // Head pointer index
-    size_t _iLastBuffer;                                 // Tail pointer index
+    size_t _iHeadIndex;                                 // Head pointer index
+    size_t _iTailIndex;                                 // Tail pointer index
     size_t _cMaxBuffers;                                    // Number of buffers
 
     const LEDBuffer * PeekOldestBuffer() const
@@ -134,23 +134,23 @@ class LEDBufferManager
         if (IsEmpty())
             return nullptr;
 
-        return _aptrBuffers[_iLastBuffer].get();
+        return _aptrBuffers[_iTailIndex].get();
     }
 
 public:
 
     explicit LEDBufferManager(size_t cBuffers)
-        : _aptrBuffers(cBuffers), _iNextBuffer(0), _iLastBuffer(0), _cMaxBuffers(cBuffers)
+        : _aptrBuffers(cBuffers), _iHeadIndex(0), _iTailIndex(0), _cMaxBuffers(cBuffers)
     {}
 
     double AgeOfOldestBuffer() const
     {
         if (!IsEmpty())
         {
-            const auto & pOldest = _aptrBuffers[_iLastBuffer].get();
+            const auto & pOldest = _aptrBuffers[_iTailIndex].get();
             return (pOldest->Seconds() + pOldest->MicroSeconds() / MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
-        return 0.0;
+        return MAXDOUBLE;
     }
 
     double AgeOfNewestBuffer() const
@@ -158,11 +158,11 @@ public:
         if (!IsEmpty())
         {
             // Find the index of the newest buffer
-            size_t newestIndex = (_iNextBuffer == 0) ? _cMaxBuffers - 1 : _iNextBuffer - 1;
+            size_t newestIndex = (_iHeadIndex == 0) ? _cMaxBuffers - 1 : _iHeadIndex - 1;
             const auto & pNewest = _aptrBuffers[newestIndex].get();
             return (pNewest->Seconds() + pNewest->MicroSeconds() / MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
-        return 0.0;
+        return MAXDOUBLE;
     }
 
     size_t Capacity() const
@@ -172,39 +172,38 @@ public:
 
     size_t Size() const
     {
-        if (_iNextBuffer >= _iLastBuffer)
-            return _iNextBuffer - _iLastBuffer;
+        if (_iHeadIndex < _iTailIndex)
+            return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
         else
-            return _cMaxBuffers - (_iLastBuffer - _iNextBuffer);
-    }
-
-    bool IsFull() const 
-    {
-        return Size() == Capacity();
+            return _iHeadIndex - _iTailIndex;
     }
 
     inline bool IsEmpty() const
     {
-        return Size() == 0;
-    }
-
-    void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
-    {
-        if (IsFull())
-            _iLastBuffer = (_iLastBuffer + 1) % _cMaxBuffers;  // Move the tail pointer to discard the oldest buffer
-
-        _aptrBuffers[_iNextBuffer] = std::move(pBuffer);
-        _iNextBuffer = (_iNextBuffer + 1) % _cMaxBuffers;
+        return _iHeadIndex == _iTailIndex;
     }
 
     std::unique_ptr<LEDBuffer> PopOldestBuffer()
     {
         if (IsEmpty())
-            return nullptr;
+            throw std::runtime_error("Can't pop from an empty buffer manager");
 
-        auto pResult = std::move(_aptrBuffers[_iLastBuffer]);
-        _iLastBuffer = (_iLastBuffer + 1) % _cMaxBuffers;
+        auto pResult = std::move(_aptrBuffers[_iTailIndex]);
+        _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
 
         return pResult;
     }
+
+    void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
+    {
+        // If the queue is full, pop the oldest buffer to make space
+        if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex) 
+            PopOldestBuffer();
+
+        // Insert the new buffer
+        _aptrBuffers[_iHeadIndex] = std::move(pBuffer);
+
+        // Advance head index
+        _iHeadIndex = (_iHeadIndex + 1) % _cMaxBuffers;
+    }   
 };

@@ -106,7 +106,7 @@ bool SocketServer::ProcessIncomingConnectionsLoop(LEDBufferManager & bufferManag
                 break;
             }
 
-            if (false == ProcessIncomingData(_abOutputBuffer, expandedSize))
+            if (false == ProcessIncomingData(bufferManager, _abOutputBuffer, expandedSize))
             {
                 printf("Error processing data\n");
                 break;
@@ -145,7 +145,7 @@ bool SocketServer::ProcessIncomingConnectionsLoop(LEDBufferManager & bufferManag
 
                 // Add it to the buffer ring
 
-                if (false == ProcessIncomingData(_pBuffer, totalExpected))
+                if (false == ProcessIncomingData(bufferManager, _pBuffer, totalExpected))
                 {
                     printf("Error in processing pixel data from network\n");
                     break;

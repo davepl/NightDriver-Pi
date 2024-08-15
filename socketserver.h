@@ -162,10 +162,26 @@ public:
         return true;
     }
 
-    bool ProcessIncomingData(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)
+    // ProcessIncomingData
+    //
+    // Takes the packet in raw form, decoded enough of it to inspect the command and channel, and then creates and pushes
+    // a new LEDBuffer for the data when appropriate.
+
+    bool ProcessIncomingData(LEDBufferManager & bufferManager, std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)
     {
-        printf("Processing incoming data not implemented\n");
-        return false;
+        uint16_t command16 = payloadData[1] << 8 | payloadData[0];
+        //printf("payloadLength: %zu, command16: %d", payloadLength, command16);
+
+        if (command16 == WIFI_COMMAND_PIXELDATA64)
+        {
+            uint16_t channel16 = WORDFromMemory(&payloadData[2]);
+            if (channel16 != 0 && (channel16 & 0x01) == 0)
+            {
+                printf("Channel mismatch, not intended for us");
+                return false;
+            }
+            bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payloadData, payloadLength) );
+        }
     }
 
     void ResetReadBuffer()
