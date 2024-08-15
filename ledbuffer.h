@@ -68,6 +68,11 @@ class LEDBuffer
     uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
     uint32_t Length()       const  { return _leds.size();           }
     
+    const std::vector<CRGB> & ColorData() const
+    {
+        return _leds;
+    }
+
     bool IsBufferOlderThan(const timeval & tv) const
     {
         if (Seconds() < (uint64_t) tv.tv_sec)
@@ -148,7 +153,7 @@ public:
         if (!IsEmpty())
         {
             const auto & pOldest = _aptrBuffers[_iTailIndex].get();
-            return (pOldest->Seconds() + pOldest->MicroSeconds() / MICROS_PER_SECOND) - CAppTime::CurrentTime();
+            return (pOldest->Seconds() + pOldest->MicroSeconds() / (double) MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;
     }
@@ -159,7 +164,7 @@ public:
         {
             // Find the index of the newest buffer
             size_t newestIndex = (_iHeadIndex == 0) ? _cMaxBuffers - 1 : _iHeadIndex - 1;
-            const auto & pNewest = _aptrBuffers[newestIndex].get();
+            const auto & pNewest = _aptrBuffers[newestIndex];
             return (pNewest->Seconds() + pNewest->MicroSeconds() / MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;

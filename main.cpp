@@ -23,10 +23,12 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <exception>
+#include <thread>
 #include "apptime.h"
 #include "globals.h"
 #include "ledbuffer.h"
 #include "socketserver.h"
+#include "matrixdraw.h"
 
 using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
@@ -100,21 +102,31 @@ int main(int argc, char *argv[])
     matrix->Clear();
     matrix->Fill(0, 0, 255);
 
-    LEDBufferManager bufferManager(100);
+    LEDBufferManager bufferManager(250);
     SocketServer socketServer(49152);
 
-    if (!socketServer.begin())
-    {
-		printf("Could not start socker server!");
-		exit(1);
-    }
+	// Launch the socket server on its own thread to process incoming packets
+
+  	std::thread([&socketServer, &bufferManager]() 
+  	{
+	    if (!socketServer.begin())
+			exit(1);
+        socketServer.ProcessIncomingConnectionsLoop(bufferManager);
+    }).detach();  // Detach to allow the thread to run independently
+
+	// Launch the draw thread on its own thread where it will monitor for buffered packets
+	// that have come due and then draw them as they do
+
+  	std::thread([&bufferManager, &matrix]() 
+  	{
+	    MatrixDraw::RunDrawLoop(bufferManager, *matrix);
+    }).detach();  // Detach to allow the thread to run independently
 
     while (!interrupt_received)
-	{
-		printf("ProcessIncoming...\n");
-        socketServer.ProcessIncomingConnectionsLoop(bufferManager);
-	}
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+	socketServer.end();
+	
     delete matrix;
     return 0;
 }

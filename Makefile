@@ -7,7 +7,7 @@
 
 CFLAGS=-Wall -g -Wextra -Wno-unused-parameter -MMD -MP
 CXXFLAGS=$(CFLAGS)
-OBJECTS=main.o network.o socketserver.o
+OBJECTS=main.o
 BINARIES=ndpi
 
 # Where our library resides. You mostly only need to change the
