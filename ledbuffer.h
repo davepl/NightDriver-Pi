@@ -41,6 +41,19 @@
 #include "pixeltypes.h"
 #include "apptime.h"
 
+// A custom exception that is thrown if data can't be parsed from the wire
+
+class LEDBufferException : public std::runtime_error {
+public:
+    explicit LEDBufferException(const std::string& message)
+        : std::runtime_error(message) {}
+};
+
+// LEDBuffer
+//
+// Represents a frame of LED data, with a timestamp.  The data is a vector of CRGB objects.
+// The timestamp is in seconds and microseconds since the epoch.
+
 class LEDBuffer
 {
   public:
@@ -89,14 +102,13 @@ class LEDBuffer
     //
     // Parse a frame from the WiFi data and return it as a constructed LEDBuffer object
     
-    static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
+   static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
     {
         constexpr auto minimumPayloadLength = 24;
-    
-        if (payloadLength < minimumPayloadLength)                 // Our header size
+
+        if (payloadLength < minimumPayloadLength) // Our header size
         {
-            printf("Not enough data received to process");
-            return nullptr;
+            throw LEDBufferException("Not enough data received to process");
         }
 
         uint16_t command16 = WORDFromMemory(&payloadData[0]);
@@ -105,19 +117,13 @@ class LEDBuffer
         uint64_t seconds   = ULONGFromMemory(&payloadData[8]);
         uint64_t micros    = ULONGFromMemory(&payloadData[16]);
 
-        //printf("UpdateFromWire -- Command: %u, Channel: %d, Length: %u, Seconds: %u, Micros: %u\n", command16, channel16, length32, seconds, micros);
-
         const size_t cbHeader = sizeof(command16) + sizeof(channel16) + sizeof(length32) + sizeof(seconds) + sizeof(micros);
 
         if (payloadLength < length32 * sizeof(CRGB) + cbHeader)
-        {
-            printf("command16: %d   length32: %d,  payloadLength: %lu\n", command16, length32, payloadLength);
-            printf("Data size mismatch");
-            return nullptr;
-        }
+            throw LEDBufferException("Data size mismatch: insufficient data for expected length");
 
         const CRGB * pData = reinterpret_cast<const CRGB *>(&payloadData[cbHeader]);
-        return std::make_unique<LEDBuffer>(pData, length32, seconds, micros);    
+        return std::make_unique<LEDBuffer>(pData, length32, seconds, micros);
     }
 };
 

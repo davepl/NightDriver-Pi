@@ -187,7 +187,19 @@ public:
                 printf("Channel mismatch, not intended for us");
                 return false;
             }
-            bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payloadData, payloadLength) );
+
+            // Now we attempt to parse the data and add it to the buffer.  If the data can't be parsed properly, we'll
+            // catch the exception and return false.
+            
+            try
+            {
+                bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payloadData, payloadLength) );
+            }
+            catch(const LEDBufferException & e)
+            {
+                std::cerr << e.what() << '\n';
+                return false;
+            }
         }
         return true;
     }
