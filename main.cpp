@@ -1,7 +1,7 @@
 //
 // File:        SocketServer.h
 //
-// NightDriverPi - (c) 2018 Plummer's Software LLC.  All Rights Reserved.
+// NightDriverPi - (c) 2024 Plummer's Software LLC.  All Rights Reserved.
 //
 // This file is part of the NightDriver software project.
 //
@@ -22,7 +22,7 @@
 // Description:
 //
 //    Hosts a socket server on port 49152 to receive LED data from the master
-// 	  and then draws that data to the LED matrix
+//    and then draws that data to the LED matrix
 //
 // History:     Aug-14-2024     Davepl      Created from NightDriverStrip
 //---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
 using rgb_matrix::FrameCanvas;
 
-// Our interrupt handler sets a global flag indicating that its time to exit
+// Our interrupt handler sets a global flag indicating that it is time to exit
 
 volatile bool interrupt_received = false;
 static void InterruptHandler(int signo) 
@@ -61,8 +61,8 @@ int usage(const char *progname)
 
 // main
 //
-// Main program entry point, which performans initialization and then spins off a thread
-// for the socket server.  It then loops drawing any frames that are available until it is
+// Main program entry point, which performs initialization and then spins off a thread
+// for the socket server.  It then loops, drawing any frames that are available until it is
 // interrupted by ctrl-c or a SIGTERM.
 
 int main(int argc, char *argv[]) 
@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
     // Initialize the RGB matrix with
     RGBMatrix::Options matrix_options;
 
-    // Our defaults, which can all be overriden from the command line
+    // Our defaults, which can all be overridden from the command line
     matrix_options.hardware_mapping = DefaultHardwareMapping;
     matrix_options.chain_length     = DefaultChainLength;
     matrix_options.rows             = DefualtRows;
@@ -87,13 +87,13 @@ int main(int argc, char *argv[])
 
     RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
     if (!matrix)
-	{
-		fprintf(stderr, "Error creating RGBMatrix object\n");
+    {
+	fprintf(stderr, "Error creating RGBMatrix object\n");
      	return 1;
-	}   
+    }   
 
-	auto maxLEDs = matrix->width() * matrix->height();
-	printf("Matrix Size: %dx%d (%d LEDs)\n", matrix->width(), matrix->height(), maxLEDs);
+    auto maxLEDs = matrix->width() * matrix->height();
+    printf("Matrix Size: %dx%d (%d LEDs)\n", matrix->width(), matrix->height(), maxLEDs);
 
     matrix->Clear();
     matrix->Fill(0, 0, 128);
@@ -101,20 +101,21 @@ int main(int argc, char *argv[])
     LEDBufferManager bufferManager(250);
     SocketServer socketServer(49152, maxLEDs);
 
-	// Launch the socket server on its own thread to process incoming packets
+    // Launch the socket server on its own thread to process incoming packets
 
-	if (socketServer.begin())
+    if (socketServer.begin())
+    {
+	std::thread([&socketServer, &bufferManager]() 
 	{
-		std::thread([&socketServer, &bufferManager]() 
-		{
-			socketServer.ProcessIncomingConnectionsLoop(bufferManager);
-		}).detach();  // Detach to allow the thread to run independently
+	    socketServer.ProcessIncomingConnectionsLoop(bufferManager);
+	}).detach();  // Detach to allow the thread to run independently
 
-		// Loop forever, looking for frames to draw on the matrix until we are interrupted
-		MatrixDraw::RunDrawLoop(bufferManager, *matrix);
+	// Loop forever, looking for frames to draw on the matrix until we are interrupted
+	MatrixDraw::RunDrawLoop(bufferManager, *matrix);
 
-		socketServer.end();
-	}
-	delete matrix;
+	socketServer.end();
+    }
+    delete matrix;
     return 0;
 }
+
