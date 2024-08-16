@@ -48,6 +48,10 @@ class MatrixDraw
 	
 	static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, RGBMatrix & matrix)
 	{
+		// TODO: This code could center a smaller buffer on the matrix, or scale it up to fill the matrix
+		//		 if the matrix is larger than the frame, but for now we just require that the frames being
+		//       sent are the same size as the matrix.
+
 		if (buffer->ColorData().size() != (size_t) matrix.width() * matrix.height())
 			throw std::runtime_error("Size mismatch between data and matrix.");
 		
@@ -77,6 +81,11 @@ class MatrixDraw
 
 		while (!interrupt_received)
 		{
+			// Rutger: My contention here is that I don't need a sychronization object here to make it atomic,
+			//         because there is no case where you'll find a buffer that is due and then later discover
+			//         none is available.  You might not get the same one that you just timechecked, but you're
+			//         guaranteed to get a buffer, so no need for a lock here.
+
 			while (bufferManager.AgeOfOldestBuffer() <= 0)
 			{
 				std::unique_ptr<LEDBuffer> buffer = bufferManager.PopOldestBuffer();

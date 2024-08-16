@@ -17,6 +17,8 @@ constexpr auto DefaultGPIOSlowdown    = 5;
 
 #define NUM_LEDS (Rows * Columns * ChainLength)
 
+// Helpers for extracting values from memory in a system-independent way
+
 inline uint64_t ULONGFromMemory(const uint8_t * payloadData)
 {
     return  (uint64_t)payloadData[7] << 56  |

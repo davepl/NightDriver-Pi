@@ -68,7 +68,7 @@ class LEDBuffer
     uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
     uint32_t Length()       const  { return _leds.size();           }
     
-    const std::vector<CRGB> & ColorData() const
+    const std::vector<CRGB> & ColorData() const-
     {
         return _leds;
     }
