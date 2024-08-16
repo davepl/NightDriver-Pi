@@ -25,7 +25,7 @@
 //
 //    Hosts a socket server on port 49152 to receive LED data from the master
 //
-// History:     AUg-14-2024     Davepl      Created from NightDriverStrip
+// History:     Aug-14-2024     Davepl      Created from NightDriverStrip
 //---------------------------------------------------------------------------
 #pragma once
 
@@ -46,7 +46,7 @@
 #define COMPRESSED_HEADER_SIZE      16                                              // Size of the header for compressed data
 #define LED_DATA_SIZE               sizeof(CRGB)                                    // Data size of an LED (24 bits or 3 bytes)
 
-// We allocate whatever the max packet is, and use it to validate incoming packets, so right now it's set to the maxiumum
+// We allocate whatever the max packet is, and use it to validate incoming packets, so right now, it's set to the maximum
 // LED data packet you could have (header plus 3 RGBs per NUM_LED)
 
 #define COMPRESSED_HEADER (0x44415645)                                              // asci "DAVE" as header
@@ -55,7 +55,7 @@ extern volatile bool interrupt_received;
 
 // SocketResponse
 //
-// Response data sent back to server ever time we receive a packet
+// Response data sent back to server every time we receive a packet
 
 struct SocketResponse
 {
@@ -76,15 +76,15 @@ static_assert(sizeof(double) == 8);             // SocketResponse on wire uses 8
 static_assert(sizeof(float)  == 4);             // PeakData on wire uses 4 byte floats
 
 // Two things must be true for this to work and interop with the C# side:  floats must be 8 bytes, not the default
-// of 4 for Arduino.  So that must be set in 'platformio.ini', and you must ensure that you align things such that
-// floats land on byte multiples of 8, otherwise you'll get packing bytes inserted.  Welcome to my world! Once upon
+// of 4 for Arduino.  So that must be set in 'platformio.ini,' and you must ensure that you align things such that
+// floats land on byte multiples of 8; otherwise, you'll get packing bytes inserted.  Welcome to my world! Once upon
 // a time, I ported about a billion lines of x86 'pragma_pack(1)' code to the MIPS (davepl)!
 
 static_assert( sizeof(SocketResponse) == 64, "SocketResponse struct size is not what is expected - check alignment and float size" );
 
 // SocketServer
 //
-// Handles incoming connections from the server and pass the data that comes in
+// Handles incoming connections from the server and passes the data that comes in
 
 class SocketServer
 {
@@ -134,7 +134,7 @@ public:
         }
 
         // When an error occurs and we close and reopen the port, we need to specify reuse flags
-        // or it might be too soon to use the port again, since close doesn't actually close it
+        // or it might be too soon to use the port again since close doesn't actually close it
         // until the socket is no longer in use.
 
         int opt = 1;
@@ -173,7 +173,7 @@ public:
     
     // ProcessIncomingData
     //
-    // Takes the packet in raw form, decoded enough of it to inspect the command and channel, and then creates and pushes
+    // Takes the packet in raw form, decodes enough of it to inspect the command and channel, and then creates and pushes
     // a new LEDBuffer for the data when appropriate.
 
     bool ProcessIncomingData(LEDBufferManager & bufferManager, std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)
@@ -312,7 +312,8 @@ public:
             }
 
             // Ensure the new_socket is valid
-            if (new_socket < 0) {
+            if (new_socket < 0) 
+            {
                 printf("Invalid socket!");
                 ResetReadBuffer();
                 continue;
@@ -322,8 +323,7 @@ public:
             {
                 bool bSendResponsePacket = false;
 
-                    // Read until we have at least enough for the data header
-
+                // Read until we have at least enough for the data header
                 if (false == ReadUntilNBytesReceived(new_socket, STANDARD_DATA_HEADER_SIZE))
                 {
                     printf("Read error in getting header.\n");
