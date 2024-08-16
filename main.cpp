@@ -61,7 +61,7 @@ int usage(const char *progname)
 
 // main
 //
-// Main program entry point, which performance initialization and then spins off a thread
+// Main program entry point, which performans initialization and then spins off a thread
 // for the socket server.  It then loops drawing any frames that are available until it is
 // interrupted by ctrl-c or a SIGTERM.
 

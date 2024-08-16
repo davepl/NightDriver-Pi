@@ -129,18 +129,10 @@ class LEDBuffer
 
 class LEDBufferManager
 {
-    std::vector<std::unique_ptr<LEDBuffer>> _aptrBuffers;  // The circular array of buffer ptrs
-    size_t _iHeadIndex;                                 // Head pointer index
-    size_t _iTailIndex;                                 // Tail pointer index
+    std::vector<std::unique_ptr<LEDBuffer>> _aptrBuffers;   // The circular array of buffer ptrs
+    size_t _iHeadIndex;                                     // Head pointer index
+    size_t _iTailIndex;                                     // Tail pointer index
     size_t _cMaxBuffers;                                    // Number of buffers
-
-    const LEDBuffer * PeekOldestBuffer() const
-    {
-        if (IsEmpty())
-            return nullptr;
-
-        return _aptrBuffers[_iTailIndex].get();
-    }
 
 public:
 
