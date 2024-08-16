@@ -36,6 +36,7 @@
 #include <memory>
 #include <iostream>
 #include <vector>
+#include <mutex>
 #include "values.h"
 #include "globals.h"
 #include "pixeltypes.h"
@@ -133,55 +134,62 @@ class LEDBuffer
 // and pop the oldest buffers.  The buffers are timestamped, and the manager can provide the
 // age of the oldest and newest buffers in seconds.
 
+#include <mutex>
+
 class LEDBufferManager
 {
     std::vector<std::unique_ptr<LEDBuffer>> _aptrBuffers;   // The circular array of buffer ptrs
     size_t _iHeadIndex;                                     // Head pointer index
     size_t _iTailIndex;                                     // Tail pointer index
     size_t _cMaxBuffers;                                    // Number of buffers
+    mutable std::mutex _mutex;                              // Mutex to protect the buffer
 
 public:
-
     explicit LEDBufferManager(size_t cBuffers)
         : _aptrBuffers(cBuffers), _iHeadIndex(0), _iTailIndex(0), _cMaxBuffers(cBuffers)
     {}
 
-    constexpr double AgeOfOldestBuffer() const
+    double AgeOfOldestBuffer() const
     {
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+
         if (!IsEmpty())
         {
             const auto & pOldest = _aptrBuffers[_iTailIndex].get();
-            return (pOldest->Seconds() + pOldest->MicroSeconds() / (double) MICROS_PER_SECOND) - CAppTime::CurrentTime();
+            return (pOldest->Seconds() + pOldest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;
     }
 
-    constexpr double AgeOfNewestBuffer() const
+    double AgeOfNewestBuffer() const
     {
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+
         if (!IsEmpty())
         {
             // Find the index of the newest buffer
             size_t newestIndex = (_iHeadIndex == 0) ? _cMaxBuffers - 1 : _iHeadIndex - 1;
             const auto & pNewest = _aptrBuffers[newestIndex];
-            return (pNewest->Seconds() + pNewest->MicroSeconds() / MICROS_PER_SECOND) - CAppTime::CurrentTime();
+            return (pNewest->Seconds() + pNewest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;
     }
 
-    constexpr size_t Capacity() const
+    size_t Capacity() const
     {
         return _cMaxBuffers;
     }
 
-    constexpr size_t Size() const
+    size_t Size() const
     {
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
         if (_iHeadIndex < _iTailIndex)
             return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
         else
             return _iHeadIndex - _iTailIndex;
     }
 
-    constexpr bool IsEmpty() const
+    bool IsEmpty() const
     {
         return _iHeadIndex == _iTailIndex;
     }
@@ -192,8 +200,7 @@ public:
     
     std::unique_ptr<LEDBuffer> PopOldestBuffer()
     {
-        if (IsEmpty())
-            throw std::runtime_error("Can't pop from an empty buffer manager");
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
 
         auto pResult = std::move(_aptrBuffers[_iTailIndex]);
         _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
@@ -207,14 +214,16 @@ public:
 
     void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
     {
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+
         // If the queue is full, pop the oldest buffer to make space
-        if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex) 
-            PopOldestBuffer();
+        if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex)
+            _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
 
         // Insert the new buffer
         _aptrBuffers[_iHeadIndex] = std::move(pBuffer);
 
         // Advance head index
         _iHeadIndex = (_iHeadIndex + 1) % _cMaxBuffers;
-    }   
+    }
 };

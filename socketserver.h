@@ -41,6 +41,7 @@
 #include <iostream>
 
 #include "ledbuffer.h"
+#include "matrixdraw.h"
 
 #define STANDARD_DATA_HEADER_SIZE   24                                              // Size of the header for expanded data
 #define COMPRESSED_HEADER_SIZE      16                                              // Size of the header for compressed data
@@ -437,13 +438,21 @@ public:
                                                 .wifiSignal   = 99,
                                                 .bufferSize   = (uint32_t)bufferManager.Capacity(),
                                                 .bufferPos    = (uint32_t)bufferManager.Size(),
-                                                .fpsDrawing   = 0,
+                                                .fpsDrawing   = (uint32_t)MatrixDraw::FPS(),
                                                 .watts        = 0
                                             };
 
                     // I dont think this is fatal, and doesn't affect the read buffer, so content to ignore for now if it happens
-                    if (sizeof(response) != write(new_socket, &response, sizeof(response)))
-                        printf("Unable to send response back to server.");
+                    try
+                    {
+                        if (sizeof(response) != write(new_socket, &response, sizeof(response)))
+                            printf("Unable to send response back to server.");
+                    }
+                    catch(const std::exception& e)
+                    {
+                        std::cerr << e.what() << '\n';
+                    }
+                    
                 }
             } while (true);
 

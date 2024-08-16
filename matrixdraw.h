@@ -38,8 +38,12 @@ using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
 using rgb_matrix::FrameCanvas;
 
+extern volatile bool interrupt_received;
+
 class MatrixDraw
 {
+    static double _FPS;
+
   protected:
 	
     // DrawFrame
@@ -48,6 +52,12 @@ class MatrixDraw
 	
     static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, RGBMatrix & matrix)
     {
+        static double lastTime = 0.0;
+        double currentTime = CAppTime::CurrentTime();
+        double delta = currentTime - lastTime + DBL_EPSILON;        // Add epsilon to avoid divide by zero
+        lastTime = currentTime;
+        _FPS =  1.0 / delta;
+
         // TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
         //       if the matrix is larger than the frame, but for now, we just require that the frames being
         //       sent are the same size as the matrix.
@@ -64,6 +74,7 @@ class MatrixDraw
             }
         }
         matrix.SwapOnVSync(nullptr);
+
     }
 
   public:
@@ -81,11 +92,6 @@ class MatrixDraw
 
         while (!interrupt_received)
         {
-            // Rutger: My contention here is that I don't need a synchronization object to make it atomic,
-            //         because there is no case where you'll find a buffer that is due and then later discover
-            //         none is available.  You might not get the same one that you just time-checked, but you're
-            //         guaranteed to get a buffer, so there is no need for a lock here.
-
             while (bufferManager.AgeOfOldestBuffer() <= 0)
             {
                 std::unique_ptr<LEDBuffer> buffer = bufferManager.PopOldestBuffer();
@@ -96,5 +102,10 @@ class MatrixDraw
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 	    return true;
+    }
+
+    static double FPS()
+    {
+        return _FPS;
     }
 };

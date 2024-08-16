@@ -48,6 +48,8 @@ static void InterruptHandler(int signo)
     interrupt_received = true;
 }
 
+double MatrixDraw::_FPS = 0.0;
+
 // usage
 //
 // Display the command line usage options
@@ -105,15 +107,15 @@ int main(int argc, char *argv[])
 
     if (socketServer.begin())
     {
-		std::thread([&socketServer, &bufferManager]() 
-		{
-			socketServer.ProcessIncomingConnectionsLoop(bufferManager);
-		}).detach();  // Detach to allow the thread to run independently
+        std::thread([&socketServer, &bufferManager]() 
+        {
+            socketServer.ProcessIncomingConnectionsLoop(bufferManager);
+        }).detach();  // Detach to allow the thread to run independently
 
-		// Loop forever, looking for frames to draw on the matrix until we are interrupted
-		MatrixDraw::RunDrawLoop(bufferManager, *matrix);
+        // Loop forever, looking for frames to draw on the matrix until we are interrupted
+        MatrixDraw::RunDrawLoop(bufferManager, *matrix);
 
-		socketServer.end();
+        socketServer.end();
     }
     delete matrix;
     return 0;
