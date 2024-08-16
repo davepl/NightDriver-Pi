@@ -49,7 +49,6 @@
 // We allocate whatever the max packet is, and use it to validate incoming packets, so right now it's set to the maxiumum
 // LED data packet you could have (header plus 3 RGBs per NUM_LED)
 
-#define MAXIMUM_PACKET_SIZE (STANDARD_DATA_HEADER_SIZE + LED_DATA_SIZE * NUM_LEDS) // Header plus 24 bits per actual LED
 #define COMPRESSED_HEADER (0x44415645)                                              // asci "DAVE" as header
 
 extern volatile bool interrupt_received;
@@ -96,18 +95,20 @@ private:
     struct sockaddr_in          _address;
     std::unique_ptr<uint8_t []> _pBuffer;
     std::unique_ptr<uint8_t []> _abOutputBuffer;
+    size_t                      _maximumPacketSize;
 
 public:
 
     size_t                      _cbReceived;
 
-    SocketServer(int port) :
+    SocketServer(int port, size_t maxLEDs) :
         _port(port),
         _server_fd(-1),
+        _maximumPacketSize(STANDARD_DATA_HEADER_SIZE + LED_DATA_SIZE * maxLEDs),
         _cbReceived(0)
     {
-        _abOutputBuffer = std::make_unique<uint8_t []>(MAXIMUM_PACKET_SIZE);        // Must add +1 for LZ bug case in Arduino library if ever backported there
-        _pBuffer = std::make_unique<uint8_t []>(MAXIMUM_PACKET_SIZE);
+        _abOutputBuffer = std::make_unique<uint8_t []>(_maximumPacketSize);        // Must add +1 for LZ bug case in Arduino library if ever backported there
+        _pBuffer = std::make_unique<uint8_t []>(_maximumPacketSize);
         memset(&_address, 0, sizeof(_address));
     }
 
@@ -178,8 +179,6 @@ public:
     bool ProcessIncomingData(LEDBufferManager & bufferManager, std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)
     {
         uint16_t command16 = payloadData[1] << 8 | payloadData[0];
-        //printf("payloadLength: %zu, command16: %d", payloadLength, command16);
-
         if (command16 == WIFI_COMMAND_PIXELDATA64)
         {
             uint16_t channel16 = WORDFromMemory(&payloadData[2]);
@@ -196,7 +195,7 @@ public:
     void ResetReadBuffer()
     {
         _cbReceived = 0;
-        memset(_pBuffer.get(), 0, MAXIMUM_PACKET_SIZE);
+        memset(_pBuffer.get(), 0, _maximumPacketSize);
     }
 
     // ReadUntilNBytesReceived
@@ -211,7 +210,7 @@ public:
         // This test caps maximum packet size as a full buffer read of LED data.  If other packets wind up being longer,
         // the buffer itself and this test might need to change
 
-        if (cbNeeded > MAXIMUM_PACKET_SIZE)
+        if (cbNeeded > _maximumPacketSize)
             return false;
 
         do
@@ -329,9 +328,9 @@ public:
                     // Unused: uint32_t reserved       = _pBuffer[15] << 24 | _pBuffer[14] << 16 | _pBuffer[13] << 8 | _pBuffer[12];
                     //printf("Compressed Header: compressedSize: %u, expandedSize: %u, reserved: %u", compressedSize, expandedSize, reserved);
 
-                    if (expandedSize > MAXIMUM_PACKET_SIZE)
+                    if (expandedSize > _maximumPacketSize)
                     {
-                        printf("Expanded packet would be %u but buffer is only %lu !!!!\n", expandedSize, MAXIMUM_PACKET_SIZE);
+                        printf("Expanded packet would be %u but buffer is only %lu !!!!\n", expandedSize, _maximumPacketSize);
                         break;
                     }
 
@@ -374,9 +373,9 @@ public:
                         //printf("Uncompressed Header: channel16=%u, length=%u, seconds=%llu, micro=%llu", channel16, length32, seconds, micros);
 
                         size_t totalExpected = STANDARD_DATA_HEADER_SIZE + length32 * LED_DATA_SIZE;
-                        if (totalExpected > MAXIMUM_PACKET_SIZE)
+                        if (totalExpected > _maximumPacketSize)
                         {
-                            printf("Too many bytes promised (%zu) - more than we can use for our LEDs at max packet (%lu)\n", totalExpected, MAXIMUM_PACKET_SIZE);
+                            printf("Too many bytes promised (%zu) - more than we can use for our LEDs at max packet (%lu)\n", totalExpected, _maximumPacketSize);
                             break;
                         }
 

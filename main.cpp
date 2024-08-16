@@ -1,29 +1,35 @@
-// -*- mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; -*-
 //
-// Example how to display an image, including animated images using
-// ImageMagick. For a full utility that does a few more things, have a look
-// at the led-image-viewer in ../utils
+// File:        SocketServer.h
 //
-// Showing an image is not so complicated, essentially just copy all the
-// pixels to the canvas. How to get the pixels ? In this example we're using
-// the graphicsmagick library as universal image loader library that
-// can also deal with animated images.
-// You can of course do your own image loading or use some other library.
+// NightDriverPi - (c) 2018 Plummer's Software LLC.  All Rights Reserved.
 //
-// This requires an external dependency, so install these first before you
-// can call `make image-example`
-//   sudo apt-get update
-//   sudo apt-get install libgraphicsmagick++-dev libwebp-dev -y
-//   make image-example
+// This file is part of the NightDriver software project.
+//
+//    NightDriver is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    NightDriver is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with Nightdriver.  It is normally found in copying.txt
+//    If not, see <https://www.gnu.org/licenses/>.
+//
+// Description:
+//
+//    Hosts a socket server on port 49152 to receive LED data from the master
+// 	  and then draws that data to the LED matrix
+//
+// History:     Aug-14-2024     Davepl      Created from NightDriverStrip
+//---------------------------------------------------------------------------
 
 #include "led-matrix.h"
 
-#include <math.h>
 #include <signal.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <exception>
-#include <thread>
 #include "apptime.h"
 #include "globals.h"
 #include "ledbuffer.h"
@@ -42,24 +48,6 @@ static void InterruptHandler(int signo)
     interrupt_received = true;
 }
 
-/*
-void CopyImageToCanvas(const Magick::Image &image, Canvas *canvas) {
-  const int offset_x = 0, offset_y = 0;  // If you want to move the image.
-  // Copy all the pixels to the canvas.
-  for (size_t y = 0; y < image.rows(); ++y) {
-    for (size_t x = 0; x < image.columns(); ++x) {
-      const Magick::Color &c = image.pixelColor(x, y);
-      if (c.alphaQuantum() < 256) {
-        canvas->SetPixel(x + offset_x, y + offset_y,
-                         ScaleQuantumToChar(c.redQuantum()),
-                         ScaleQuantumToChar(c.greenQuantum()),
-                         ScaleQuantumToChar(c.blueQuantum()));
-      }
-    }
-  }
-}
-*/
-
 // usage
 //
 // Display the command line usage options
@@ -73,60 +61,60 @@ int usage(const char *progname)
 
 // main
 //
-// Main program entry point
+// Main program entry point, which performance initialization and then spins off a thread
+// for the socket server.  It then loops drawing any frames that are available until it is
+// interrupted by ctrl-c or a SIGTERM.
 
 int main(int argc, char *argv[]) 
 {
+    // Register signal handlers to catch when it's time to shut down
+    signal(SIGTERM, InterruptHandler);
+    signal(SIGINT, InterruptHandler);
 
     // Initialize the RGB matrix with
     RGBMatrix::Options matrix_options;
 
-    matrix_options.hardware_mapping = HardwareMapping;
-    matrix_options.chain_length     = ChainLength;
-    matrix_options.rows             = Rows;
-    matrix_options.cols             = Columns;
+    // Our defaults, which can all be overriden from the command line
+    matrix_options.hardware_mapping = DefaultHardwareMapping;
+    matrix_options.chain_length     = DefaultChainLength;
+    matrix_options.rows             = DefualtRows;
+    matrix_options.cols             = DefaultColumns;
 
     rgb_matrix::RuntimeOptions runtime_opt;
     if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv, &matrix_options, &runtime_opt)) 
         return usage(argv[0]);
-
-    runtime_opt.gpio_slowdown = GPIOSlowdown;
-
-    signal(SIGTERM, InterruptHandler);
-    signal(SIGINT, InterruptHandler);
+    runtime_opt.gpio_slowdown = DefaultGPIOSlowdown;
 
     RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
-    if (matrix == NULL)
-        return 1;
+    if (!matrix)
+	{
+		fprintf(stderr, "Error creating RGBMatrix object\n");
+     	return 1;
+	}   
+
+	auto maxLEDs = matrix->width() * matrix->height();
+	printf("Matrix Size: %dx%d (%d LEDs)\n", matrix->width(), matrix->height(), maxLEDs);
 
     matrix->Clear();
-    matrix->Fill(0, 0, 255);
+    matrix->Fill(0, 0, 128);
 
     LEDBufferManager bufferManager(250);
-    SocketServer socketServer(49152);
+    SocketServer socketServer(49152, maxLEDs);
 
 	// Launch the socket server on its own thread to process incoming packets
 
-  	std::thread([&socketServer, &bufferManager]() 
-  	{
-	    if (!socketServer.begin())
-			exit(1);
-        socketServer.ProcessIncomingConnectionsLoop(bufferManager);
-    }).detach();  // Detach to allow the thread to run independently
+	if (socketServer.begin())
+	{
+		std::thread([&socketServer, &bufferManager]() 
+		{
+			socketServer.ProcessIncomingConnectionsLoop(bufferManager);
+		}).detach();  // Detach to allow the thread to run independently
 
-	// Launch the draw thread on its own thread where it will monitor for buffered packets
-	// that have come due and then draw them as they do
+		// Loop forever, looking for frames to draw on the matrix until we are interrupted
+		MatrixDraw::RunDrawLoop(bufferManager, *matrix);
 
-  	std::thread([&bufferManager, &matrix]() 
-  	{
-	    MatrixDraw::RunDrawLoop(bufferManager, *matrix);
-    }).detach();  // Detach to allow the thread to run independently
-
-    while (!interrupt_received)
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-	socketServer.end();
-	
-    delete matrix;
+		socketServer.end();
+	}
+	delete matrix;
     return 0;
 }
