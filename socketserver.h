@@ -49,7 +49,7 @@
 // We allocate whatever the max packet is, and use it to validate incoming packets, so right now, it's set to the maximum
 // LED data packet you could have (header plus 3 RGBs per NUM_LED)
 
-#define COMPRESSED_HEADER (0x44415645)                                              // asci "DAVE" as header
+#define COMPRESSED_HEADER_TAG (0x44415645)                                              // asci "DAVE" as header
 
 extern volatile bool interrupt_received;
 
@@ -333,7 +333,7 @@ public:
                 // Now that we have the header we can see how much more data is expected to follow
 
                 const uint32_t header  = _pBuffer[3] << 24  | _pBuffer[2] << 16  | _pBuffer[1] << 8  | _pBuffer[0];
-                if (header == COMPRESSED_HEADER)
+                if (header == COMPRESSED_HEADER_TAG)
                 {
                     uint32_t compressedSize = _pBuffer[7] << 24  | _pBuffer[6] << 16  | _pBuffer[5] << 8  | _pBuffer[4];
                     uint32_t expandedSize   = _pBuffer[11] << 24 | _pBuffer[10] << 16 | _pBuffer[9] << 8  | _pBuffer[8];
