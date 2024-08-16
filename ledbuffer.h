@@ -43,15 +43,15 @@
 
 // A custom exception that is thrown if data can't be parsed from the wire
 
-class LEDBufferException : public std::runtime_error {
-public:
-    explicit LEDBufferException(const std::string& message)
-        : std::runtime_error(message) {}
+class LEDBufferException : public std::runtime_error 
+{
+  public:
+    explicit LEDBufferException(const std::string& message) : std::runtime_error(message) {}
 };
 
 // LEDBuffer
 //
-// Represents a frame of LED data, with a timestamp.  The data is a vector of CRGB objects.
+// Represents a frame of LED data with a timestamp.  The data is a vector of CRGB objects.
 // The timestamp is in seconds and microseconds since the epoch.
 
 class LEDBuffer
@@ -129,7 +129,7 @@ class LEDBuffer
 
 // LEDBufferManager
 //
-// Maintains a circular array of LEDBuffer objects, and provides methods to push new buffers
+// Maintains a circular array of LEDBuffer objects and provides methods to push new buffers
 // and pop the oldest buffers.  The buffers are timestamped, and the manager can provide the
 // age of the oldest and newest buffers in seconds.
 
@@ -196,6 +196,10 @@ public:
 
         return pResult;
     }
+
+    // PushNewBuffer
+    //
+    // Uses move semantics to take ownership of the incoming buffer
 
     void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
     {
