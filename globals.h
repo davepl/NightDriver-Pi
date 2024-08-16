@@ -19,7 +19,7 @@ constexpr auto DefaultGPIOSlowdown    = 5;
 
 // Helpers for extracting values from memory in a system-independent way
 
-inline uint64_t ULONGFromMemory(const uint8_t * payloadData)
+constexpr uint64_t ULONGFromMemory(const uint8_t * payloadData)
 {
     return  (uint64_t)payloadData[7] << 56  |
             (uint64_t)payloadData[6] << 48  |
@@ -31,7 +31,7 @@ inline uint64_t ULONGFromMemory(const uint8_t * payloadData)
             (uint64_t)payloadData[0];
 }
 
-inline uint32_t DWORDFromMemory(const uint8_t * payloadData)
+constexpr uint32_t DWORDFromMemory(const uint8_t * payloadData)
 {
     return  (uint32_t)payloadData[3] << 24  |
             (uint32_t)payloadData[2] << 16  |
@@ -39,7 +39,7 @@ inline uint32_t DWORDFromMemory(const uint8_t * payloadData)
             (uint32_t)payloadData[0];
 }
 
-inline uint16_t WORDFromMemory(const uint8_t * payloadData)
+constexpr uint16_t WORDFromMemory(const uint8_t * payloadData)
 {
     return  (uint16_t)payloadData[1] << 8   |
             (uint16_t)payloadData[0];

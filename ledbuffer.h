@@ -77,16 +77,16 @@ class LEDBuffer
     {
     }
 
-    uint64_t Seconds()      const  { return _timeStampSeconds;      }
-    uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
-    uint32_t Length()       const  { return _leds.size();           }
+    constexpr uint64_t Seconds()      const  { return _timeStampSeconds;      }
+    constexpr uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
+    inline    uint32_t Length()       const  { return _leds.size();           }
     
     const std::vector<CRGB> & ColorData() const
     {
         return _leds;
     }
 
-    bool IsBufferOlderThan(const timeval & tv) const
+    constexpr bool IsBufferOlderThan(const timeval & tv) const
     {
         if (Seconds() < (uint64_t) tv.tv_sec)
             return true;
@@ -102,7 +102,7 @@ class LEDBuffer
     //
     // Parse a frame from the WiFi data and return it as a constructed LEDBuffer object
     
-   static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
+    static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
     {
         constexpr auto minimumPayloadLength = 24;
 
@@ -117,7 +117,7 @@ class LEDBuffer
         uint64_t seconds   = ULONGFromMemory(&payloadData[8]);
         uint64_t micros    = ULONGFromMemory(&payloadData[16]);
 
-        const size_t cbHeader = sizeof(command16) + sizeof(channel16) + sizeof(length32) + sizeof(seconds) + sizeof(micros);
+        constexpr size_t cbHeader = sizeof(command16) + sizeof(channel16) + sizeof(length32) + sizeof(seconds) + sizeof(micros);
 
         if (payloadLength < length32 * sizeof(CRGB) + cbHeader)
             throw LEDBufferException("Data size mismatch: insufficient data for expected length");
@@ -146,7 +146,7 @@ public:
         : _aptrBuffers(cBuffers), _iHeadIndex(0), _iTailIndex(0), _cMaxBuffers(cBuffers)
     {}
 
-    double AgeOfOldestBuffer() const
+    constexpr double AgeOfOldestBuffer() const
     {
         if (!IsEmpty())
         {
@@ -156,7 +156,7 @@ public:
         return MAXDOUBLE;
     }
 
-    double AgeOfNewestBuffer() const
+    constexpr double AgeOfNewestBuffer() const
     {
         if (!IsEmpty())
         {
@@ -168,12 +168,12 @@ public:
         return MAXDOUBLE;
     }
 
-    size_t Capacity() const
+    constexpr size_t Capacity() const
     {
         return _cMaxBuffers;
     }
 
-    size_t Size() const
+    constexpr size_t Size() const
     {
         if (_iHeadIndex < _iTailIndex)
             return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
@@ -181,11 +181,15 @@ public:
             return _iHeadIndex - _iTailIndex;
     }
 
-    inline bool IsEmpty() const
+    constexpr bool IsEmpty() const
     {
         return _iHeadIndex == _iTailIndex;
     }
 
+    // PopOldestBuffer
+    //
+    // Uses move semantics to return ownership of the oldest buffer
+    
     std::unique_ptr<LEDBuffer> PopOldestBuffer()
     {
         if (IsEmpty())

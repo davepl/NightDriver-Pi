@@ -48,22 +48,22 @@ class MatrixDraw
 	
     static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, RGBMatrix & matrix)
     {
-	// TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
-	//       if the matrix is larger than the frame, but for now, we just require that the frames being
-	//       sent are the same size as the matrix.
+        // TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
+        //       if the matrix is larger than the frame, but for now, we just require that the frames being
+        //       sent are the same size as the matrix.
 
-	if (buffer->ColorData().size() != (size_t) matrix.width() * matrix.height())
-	    throw std::runtime_error("Size mismatch between data and matrix.");
-		
-	for (int x = 0; x < matrix.width(); x++)
+        if (buffer->ColorData().size() != (size_t) matrix.width() * matrix.height())
+            throw std::runtime_error("Size mismatch between data and matrix.");
+            
+        for (int x = 0; x < matrix.width(); x++)
         {
-	    for (int y = 0; y < matrix.height(); y++)
-	    {
-	        CRGB color = buffer->ColorData()[y * matrix.width() + x];
-	        matrix.SetPixel(x, y, color.r, color.g, color.b);
-	    }
-	}
-	matrix.SwapOnVSync(nullptr);
+            for (int y = 0; y < matrix.height(); y++)
+            {
+                CRGB color = buffer->ColorData()[y * matrix.width() + x];
+                matrix.SetPixel(x, y, color.r, color.g, color.b);
+            }
+        }
+        matrix.SwapOnVSync(nullptr);
     }
 
   public:
@@ -74,27 +74,27 @@ class MatrixDraw
 
     static bool RunDrawLoop(LEDBufferManager & bufferManager, RGBMatrix & matrix)
     {
-	// If set to true, this will cause backlogged frames to be discarded.  If false, they will be drawn
-	// as fast as possible to catch up to the current time
+        // If set to true, this will cause backlogged frames to be discarded.  If false, they will be drawn
+        // as fast as possible to catch up to the current time
 
-	constexpr auto burnExtraFrames = false;
+        constexpr auto burnExtraFrames = false;
 
-	while (!interrupt_received)
-	{
-  	    // Rutger: My contention here is that I don't need a synchronization object to make it atomic,
-	    //         because there is no case where you'll find a buffer that is due and then later discover
-	    //         none is available.  You might not get the same one that you just time-checked, but you're
-	    //         guaranteed to get a buffer, so there is no need for a lock here.
+        while (!interrupt_received)
+        {
+            // Rutger: My contention here is that I don't need a synchronization object to make it atomic,
+            //         because there is no case where you'll find a buffer that is due and then later discover
+            //         none is available.  You might not get the same one that you just time-checked, but you're
+            //         guaranteed to get a buffer, so there is no need for a lock here.
 
-	    while (bufferManager.AgeOfOldestBuffer() <= 0)
-	    {
-		std::unique_ptr<LEDBuffer> buffer = bufferManager.PopOldestBuffer();
-		if (burnExtraFrames && bufferManager.AgeOfOldestBuffer() <= 0)
-			continue;
-		DrawFrame(buffer, matrix);
-	    }
-	    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
-	return true;
-     }
+            while (bufferManager.AgeOfOldestBuffer() <= 0)
+            {
+                std::unique_ptr<LEDBuffer> buffer = bufferManager.PopOldestBuffer();
+                if (burnExtraFrames && bufferManager.AgeOfOldestBuffer() <= 0)
+                    continue;
+                DrawFrame(buffer, matrix);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+	    return true;
+    }
 };
