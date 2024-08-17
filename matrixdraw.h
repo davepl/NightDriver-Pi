@@ -92,6 +92,11 @@ class MatrixDraw
 
         while (!interrupt_received)
         {
+            // There may be a slight race condition here, where the oldest buffer is popped and then
+            // replaced by another before we wind up grabbing it, but that's not a bid deal.  It'd be
+            // serious if were were popping thhe last buffer, but the optional<> nature of the return
+            // value means we can handle that case just fine.
+            
             while (bufferManager.AgeOfOldestBuffer() <= 0)
             {
                 std::optional<std::unique_ptr<LEDBuffer>> buffer = bufferManager.PopOldestBuffer();
