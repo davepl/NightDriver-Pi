@@ -70,7 +70,7 @@ class MatrixDraw
             for (int y = 0; y < matrix.height(); y++)
             {
                 CRGB color = buffer->ColorData()[y * matrix.width() + x];
-                matrix.SetPixel(x, y, color.r, color.g, color.b);
+                matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
             }
         }
         matrix.SwapOnVSync(nullptr);
@@ -94,10 +94,14 @@ class MatrixDraw
         {
             while (bufferManager.AgeOfOldestBuffer() <= 0)
             {
-                std::unique_ptr<LEDBuffer> buffer = bufferManager.PopOldestBuffer();
+                std::optional<std::unique_ptr<LEDBuffer>> buffer = bufferManager.PopOldestBuffer();
+                if (!buffer.has_value())
+                    continue;
+
                 if (burnExtraFrames && bufferManager.AgeOfOldestBuffer() <= 0)
                     continue;
-                DrawFrame(buffer, matrix);
+
+                DrawFrame(buffer.value(), matrix);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

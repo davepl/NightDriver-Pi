@@ -473,48 +473,52 @@ public:
         memset(&stream, 0, sizeof(stream));
 
         // Initialize the stream for decompression
-        stream.next_in = const_cast<Bytef*>(pBuffer); // Input buffer
-        stream.avail_in = cBuffer;                   // Input buffer size
-        stream.next_out = pOutput;                   // Output buffer
+        stream.next_in   = const_cast<Bytef*>(pBuffer); // Input buffer
+        stream.avail_in  = cBuffer;                   // Input buffer size
+        stream.next_out  = pOutput;                   // Output buffer
         stream.avail_out = expectedOutputSize;       // Output buffer size
 
         // Choose appropriate initialization based on compression format
-        int ret = inflateInit2(&stream, MAX_WBITS);  // Use -MAX_WBITS for raw deflate; for zlib/gzip header use different options
+        // Use -MAX_WBITS for raw deflate; for zlib/gzip header use different options
+
+        int ret = inflateInit2(&stream, MAX_WBITS);  
         if (ret != Z_OK) {
             printf("ERROR: zlib inflateInit2 failed with code %d\n", ret);
             return false;
         }
 
         // Perform the decompression
-        do {
+        do 
+        {
             ret = inflate(&stream, Z_NO_FLUSH); // Use Z_NO_FLUSH for incremental decompression
-            if (ret == Z_STREAM_ERROR) {
+            if (ret == Z_STREAM_ERROR) 
+            {
                 printf("Stream error during decompression\n");
                 inflateEnd(&stream);
                 return false;
             }
-
-            if (ret == Z_DATA_ERROR) {
+            if (ret == Z_DATA_ERROR) 
+            {
                 printf("Data error during decompression (possibly corrupted data)\n");
                 inflateEnd(&stream);
                 return false;
             }
-
-            if (ret == Z_MEM_ERROR) {
+            if (ret == Z_MEM_ERROR) 
+            {
                 printf("Memory error during decompression\n");
                 inflateEnd(&stream);
                 return false;
             }
-
-            if (ret == Z_BUF_ERROR) {
+            if (ret == Z_BUF_ERROR) 
+            {
                 // Buffer error, not necessarily fatal, but output buffer may be too small
                 printf("Buffer error during decompression. Possibly insufficient output buffer size.\n");
             }
-
         } while (ret != Z_STREAM_END);
 
         // Ensure the decompressed size matches the expected size
-        if (stream.total_out != expectedOutputSize) {
+        if (stream.total_out != expectedOutputSize) 
+        {
             printf("Expected %zu bytes, but decompressed to %lu bytes instead\n", expectedOutputSize, stream.total_out);
             inflateEnd(&stream);
             return false;

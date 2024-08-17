@@ -37,6 +37,7 @@
 #include <iostream>
 #include <vector>
 #include <mutex>
+#include <optional>
 #include "values.h"
 #include "globals.h"
 #include "pixeltypes.h"
@@ -80,23 +81,10 @@ class LEDBuffer
 
     constexpr uint64_t Seconds()      const  { return _timeStampSeconds;      }
     constexpr uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
-    inline    uint32_t Length()       const  { return _leds.size();           }
     
     const std::vector<CRGB> & ColorData() const
     {
         return _leds;
-    }
-
-    constexpr bool IsBufferOlderThan(const timeval & tv) const
-    {
-        if (Seconds() < (uint64_t) tv.tv_sec)
-            return true;
-
-        if (Seconds() == (uint64_t) tv.tv_sec)
-            if (MicroSeconds() < (uint64_t) tv.tv_usec)
-                return true;
-
-        return false;
     }
 
     // CreateFromWire
@@ -142,7 +130,7 @@ class LEDBufferManager
     size_t _iHeadIndex;                                     // Head pointer index
     size_t _iTailIndex;                                     // Tail pointer index
     size_t _cMaxBuffers;                                    // Number of buffers
-    mutable std::mutex _mutex;                              // Mutex to protect the buffer
+    mutable std::recursive_mutex _mutex;                    // Recursive mutex to protect the buffer
 
 public:
     explicit LEDBufferManager(size_t cBuffers)
@@ -151,7 +139,7 @@ public:
 
     double AgeOfOldestBuffer() const
     {
-        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
 
         if (!IsEmpty())
         {
@@ -163,7 +151,7 @@ public:
 
     double AgeOfNewestBuffer() const
     {
-        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
 
         if (!IsEmpty())
         {
@@ -175,14 +163,14 @@ public:
         return MAXDOUBLE;
     }
 
-    size_t Capacity() const
+    constexpr size_t Capacity() const
     {
         return _cMaxBuffers;
     }
 
     size_t Size() const
     {
-        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
         if (_iHeadIndex < _iTailIndex)
             return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
         else
@@ -191,6 +179,7 @@ public:
 
     bool IsEmpty() const
     {
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
         return _iHeadIndex == _iTailIndex;
     }
 
@@ -198,14 +187,19 @@ public:
     //
     // Uses move semantics to return ownership of the oldest buffer
     
-    std::unique_ptr<LEDBuffer> PopOldestBuffer()
+    std::optional<std::unique_ptr<LEDBuffer>> PopOldestBuffer()
     {
-        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+
+        if (IsEmpty()) 
+        {
+            return std::nullopt;  // Return empty optional if the buffer is empty
+        }
 
         auto pResult = std::move(_aptrBuffers[_iTailIndex]);
         _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
 
-        return pResult;
+        return std::optional<std::unique_ptr<LEDBuffer>>(std::move(pResult));
     }
 
     // PushNewBuffer
@@ -214,7 +208,7 @@ public:
 
     void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
     {
-        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
 
         // If the queue is full, pop the oldest buffer to make space
         if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex)
