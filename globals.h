@@ -9,11 +9,14 @@ constexpr auto WIFI_COMMAND_PEAKDATA    = 4;             // Wifi command that de
 //
 // Can be overridden from the command line
 
-constexpr auto DefaultHardwareMapping = "adafruit-hat";
-constexpr auto DefaultChainLength     = 8;
-constexpr auto DefualtRows            = 32;
-constexpr auto DefaultColumns         = 64;
-constexpr auto DefaultGPIOSlowdown    = 5;
+constexpr auto DefaultHardwareMapping    = "adafruit-hat-pwm";
+constexpr auto DefaultChainLength        = 8;
+constexpr auto DefualtRows               = 32;
+constexpr auto DefaultColumns            = 64;
+constexpr auto DefaultGPIOSlowdown       = 5;
+constexpr auto DefaultRefreshRate        = 60;
+constexpr auto DefaultDisableBusyWaiting = true;
+
 
 #define NUM_LEDS (Rows * Columns * ChainLength)
 

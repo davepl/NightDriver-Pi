@@ -73,7 +73,7 @@ class MatrixDraw
                 matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
             }
         }
-        matrix.SwapOnVSync(nullptr);
+        //matrix.SwapOnVSync(nullptr);
 
     }
 
@@ -89,14 +89,15 @@ class MatrixDraw
         // as fast as possible to catch up to the current time
 
         constexpr auto burnExtraFrames = false;
+        constexpr auto kMaximumWait = 10000.0;  // How long to wait when no frames available in the buffer
 
         while (!interrupt_received)
         {
             // There may be a slight race condition here, where the oldest buffer is popped and then
-            // replaced by another before we wind up grabbing it, but that's not a bid deal.  It'd be
+            // replaced by another before we wind up grabbing it, but that's not a big deal.  It'd be
             // serious if were were popping thhe last buffer, but the optional<> nature of the return
             // value means we can handle that case just fine.
-            
+
             while (bufferManager.AgeOfOldestBuffer() <= 0)
             {
                 std::optional<std::unique_ptr<LEDBuffer>> buffer = bufferManager.PopOldestBuffer();
@@ -108,7 +109,9 @@ class MatrixDraw
 
                 DrawFrame(buffer.value(), matrix);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * 1000000L);
+            if (delay > 0)
+                std::this_thread::sleep_for(std::chrono::microseconds(delay));
         }
 	    return true;
     }

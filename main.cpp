@@ -77,11 +77,17 @@ int main(int argc, char *argv[])
     RGBMatrix::Options matrix_options;
 
     // Our defaults, which can all be overridden from the command line
-    matrix_options.hardware_mapping = DefaultHardwareMapping;
-    matrix_options.chain_length     = DefaultChainLength;
-    matrix_options.rows             = DefualtRows;
-    matrix_options.cols             = DefaultColumns;
+    matrix_options.hardware_mapping      = DefaultHardwareMapping;
+    matrix_options.chain_length          = DefaultChainLength;
+    matrix_options.rows                  = DefualtRows;
+    matrix_options.cols                  = DefaultColumns;
 
+    // By limiting the refresh to 60Hz and not busy waiting, we can keep the CPU load down
+    // under 50% of a single core while still receiveing and unpacking. full video frames
+    matrix_options.limit_refresh_rate_hz = DefaultRefreshRate;
+    matrix_options.disable_busy_waiting  = DefaultDisableBusyWaiting;
+
+    // User can override the defaults from the command line
     rgb_matrix::RuntimeOptions runtime_opt;
     if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv, &matrix_options, &runtime_opt)) 
         return usage(argv[0]);
@@ -90,8 +96,8 @@ int main(int argc, char *argv[])
     RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
     if (!matrix)
     {
-	fprintf(stderr, "Error creating RGBMatrix object\n");
-     	return 1;
+    	fprintf(stderr, "Error creating RGBMatrix object\n");
+         	return 1;
     }   
 
     auto maxLEDs = matrix->width() * matrix->height();
