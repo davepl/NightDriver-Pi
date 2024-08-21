@@ -25,6 +25,7 @@ all : $(BINARIES)
 ndpi : $(OBJECTS) $(RGB_LIBRARY)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
+.PHONY: $(RGB_LIBRARY)
 $(RGB_LIBRARY) :
 	$(MAKE) -C $(RGB_LIB_DISTRIBUTION)
 
@@ -41,4 +42,4 @@ clean:
 -include $(OBJECTS:.o=.d)
 
 FORCE:
-.PHONY: FORCE
+.PHONY: FORCE)
