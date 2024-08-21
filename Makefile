@@ -2,7 +2,7 @@
 #
 # -MMD: This option tells gcc or g++ to generate a .d file containing the dependencies for each .cpp or .c file.
 # 	    The .d file will list the source file and all the headers it depends on.
-# -MP:  This flag adds phony targets for each header file to avoid issues if the header is deleted. This prevents 
+# -MP:  This flag adds phony targets for each header file to avoid issues if the header is deleted. This prevents
 #       Make from throwing an error when it tries to rebuild based on a deleted header.
 
 CFLAGS=-Wall -Ofast -g -Wextra -Wno-unused-parameter -MMD -MP
@@ -13,7 +13,7 @@ BINARIES=ndpi
 # Where our library resides. You mostly only need to change the
 # RGB_LIB_DISTRIBUTION, this is where the library is checked out.
 
-RGB_LIB_DISTRIBUTION=../rpi-rgb-led-matrix
+RGB_LIB_DISTRIBUTION=rpi-rgb-led-matrix
 RGB_INCDIR=$(RGB_LIB_DISTRIBUTION)/include
 RGB_LIBDIR=$(RGB_LIB_DISTRIBUTION)/lib
 RGB_LIBRARY_NAME=rgbmatrix
@@ -25,6 +25,9 @@ all : $(BINARIES)
 ndpi : $(OBJECTS) $(RGB_LIBRARY)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
+$(RGB_LIBRARY) :
+	$(MAKE) -C $(RGB_LIB_DISTRIBUTION)
+
 %.o : %.cpp
 	$(CXX) -I$(RGB_INCDIR) $(CXXFLAGS) -c -o $@ $<
 
@@ -33,6 +36,7 @@ ndpi : $(OBJECTS) $(RGB_LIBRARY)
 
 clean:
 	rm -f $(OBJECTS) $(BINARIES) $(OBJECTS:.o=.d)
+
 
 -include $(OBJECTS:.o=.d)
 
