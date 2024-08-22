@@ -38,6 +38,7 @@
 #include <vector>
 #include <mutex>
 #include <optional>
+#include <span>
 #include "values.h"
 #include "globals.h"
 #include "pixeltypes.h"
@@ -62,9 +63,9 @@ class LEDBuffer
 
   private:
 
-    std::vector<CRGB>        _leds;
-    const uint64_t           _timeStampMicroseconds;
-    const uint64_t           _timeStampSeconds;
+    std::vector<CRGB> _leds;
+    const uint64_t    _timeStampMicroseconds;
+    const uint64_t    _timeStampSeconds;
 
   public:
 
@@ -91,8 +92,10 @@ class LEDBuffer
     //
     // Parse a frame from the WiFi data and return it as a constructed LEDBuffer object
     
-    static std::unique_ptr<LEDBuffer> CreateFromWire(std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)   
+    static std::unique_ptr<LEDBuffer> CreateFromWire(std::span<const uint8_t> payload)   
     {
+        const     auto payloadData = payload.data();
+        const     auto payloadLength = payload.size();
         constexpr auto minimumPayloadLength = 24;
 
         if (payloadLength < minimumPayloadLength) // Our header size
@@ -121,8 +124,6 @@ class LEDBuffer
 // Maintains a circular array of LEDBuffer objects and provides methods to push new buffers
 // and pop the oldest buffers.  The buffers are timestamped, and the manager can provide the
 // age of the oldest and newest buffers in seconds.
-
-#include <mutex>
 
 class LEDBufferManager
 {
@@ -170,7 +171,7 @@ public:
 
     size_t Size() const
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer parameters
         if (_iHeadIndex < _iTailIndex)
             return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
         else
@@ -179,7 +180,7 @@ public:
 
     bool IsEmpty() const
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer head and tail
         return _iHeadIndex == _iTailIndex;
     }
 
@@ -192,9 +193,7 @@ public:
         std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
 
         if (IsEmpty()) 
-        {
             return std::nullopt;  // Return empty optional if the buffer is empty
-        }
 
         auto pResult = std::move(_aptrBuffers[_iTailIndex]);
         _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;

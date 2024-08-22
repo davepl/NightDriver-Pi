@@ -58,23 +58,29 @@ class MatrixDraw
         lastTime = currentTime;
         _FPS =  1.0 / delta;
 
+        const size_t width = matrix.width();
+        const size_t height = matrix.height();
+        const size_t numpixels = width * height;
+
         // TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
         //       if the matrix is larger than the frame, but for now, we just require that the frames being
         //       sent are the same size as the matrix.
 
-        if (buffer->ColorData().size() != (size_t) matrix.width() * matrix.height())
+        if (buffer->ColorData().size() != width * height)
             throw std::runtime_error("Size mismatch between data and matrix.");
             
-        for (int x = 0; x < matrix.width(); x++)
+        // Process the entire frame in a single loop for better cache locality
+        for (size_t idx = 0; idx < numpixels; ++idx)
         {
-            for (int y = 0; y < matrix.height(); y++)
-            {
-                CRGB color = buffer->ColorData()[y * matrix.width() + x];
-                matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
-            }
-        }
-        //matrix.SwapOnVSync(nullptr);
+            int x = idx % width;
+            int y = idx / width;
 
+            // Get the pixel color
+            CRGB color = buffer->ColorData()[idx];
+
+            // Set the pixel in the matrix (x is flipped)
+            matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
+        }
     }
 
   public:
@@ -87,9 +93,10 @@ class MatrixDraw
     {
         // If set to true, this will cause backlogged frames to be discarded.  If false, they will be drawn
         // as fast as possible to catch up to the current time
-
         constexpr auto burnExtraFrames = false;
-        constexpr auto kMaximumWait = 10000.0;  // How long to wait when no frames available in the buffer
+
+        // How long to wait (micros) when no frames available in the buffer
+        constexpr auto kMaximumWait = 10000.0;  
 
         while (!interrupt_received)
         {
@@ -109,7 +116,7 @@ class MatrixDraw
 
                 DrawFrame(buffer.value(), matrix);
             }
-            int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * 1000000L);
+            int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * MICROS_PER_SECOND);
             if (delay > 0)
                 std::this_thread::sleep_for(std::chrono::microseconds(delay));
         }

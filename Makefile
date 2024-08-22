@@ -5,7 +5,7 @@
 # -MP:  This flag adds phony targets for each header file to avoid issues if the header is deleted. This prevents 
 #       Make from throwing an error when it tries to rebuild based on a deleted header.
 
-CFLAGS=-Wall -Ofast -g -Wextra -Wno-unused-parameter -MMD -MP
+CFLAGS=-Wall -Ofast -g -Wextra -Wno-unused-parameter -MMD -MP -std=c++20
 CXXFLAGS=$(CFLAGS)
 OBJECTS=main.o
 BINARIES=ndpi

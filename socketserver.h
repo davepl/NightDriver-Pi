@@ -37,6 +37,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <zlib.h>
+#include <span>
 #include <memory>
 #include <iostream>
 
@@ -147,9 +148,9 @@ public:
         }
 
         memset(&_address, 0, sizeof(_address));
-        _address.sin_family = AF_INET;
+        _address.sin_family      = AF_INET;
         _address.sin_addr.s_addr = INADDR_ANY;
-        _address.sin_port = htons( _port );
+        _address.sin_port        = htons( _port );
 
         if (bind(_server_fd, (struct sockaddr *)&_address, sizeof(_address)) < 0)       // Bind socket to port
         {
@@ -177,8 +178,9 @@ public:
     // Takes the packet in raw form, decodes enough of it to inspect the command and channel, and then creates and pushes
     // a new LEDBuffer for the data when appropriate.
 
-    bool ProcessIncomingData(LEDBufferManager & bufferManager, std::unique_ptr<uint8_t []> & payloadData, size_t payloadLength)
+    bool ProcessIncomingData(LEDBufferManager & bufferManager, std::span<const uint8_t> payload)
     {
+        const auto payloadData = payload.data();
         uint16_t command16 = payloadData[1] << 8 | payloadData[0];
         if (command16 == WIFI_COMMAND_PIXELDATA64)
         {
@@ -194,15 +196,15 @@ public:
             
             try
             {
-                bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payloadData, payloadLength) );
+                bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payload) );
+                return true;
             }
             catch(const LEDBufferException & e)
             {
                 std::cerr << e.what() << '\n';
-                return false;
             }
         }
-        return true;
+        return false;
     }
 
     void ResetReadBuffer()
@@ -362,7 +364,8 @@ public:
                         break;
                     }
 
-                    if (false == ProcessIncomingData(bufferManager, _abOutputBuffer, expandedSize))
+                    auto payload = std::span<const uint8_t>(_abOutputBuffer.get(), expandedSize);
+                    if (false == ProcessIncomingData(bufferManager, payload))
                     {
                         printf("Error processing data\n");
                         break;
@@ -401,7 +404,8 @@ public:
 
                         // Add it to the buffer ring
 
-                        if (false == ProcessIncomingData(bufferManager, _pBuffer, totalExpected))
+                        auto payload = std::span<const uint8_t>(_pBuffer.get(), totalExpected);
+                        if (false == ProcessIncomingData(bufferManager, payload))
                         {
                             printf("Error in processing pixel data from network\n");
                             break;
