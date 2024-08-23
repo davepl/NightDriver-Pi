@@ -29,15 +29,13 @@
 //---------------------------------------------------------------------------
 #pragma once
 
-#include "led-matrix.h"
-#include "ledbuffer.h"
-#include <thread>
-#include <chrono>
-#include <omp.h>  // Include OpenMP header
+#include "led-matrix.h"     // Raspberry Pi LED Matrix library
+#include "ledbuffer.h"      // The LED circular buffer manager
+#include <thread>           // For spawning threads
+#include <chrono>           // Time and delays
+#include <omp.h>            // Include OpenMP header
 
-using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
-using rgb_matrix::FrameCanvas;
 
 extern volatile bool interrupt_received;
 
@@ -75,11 +73,11 @@ class MatrixDraw
         #pragma omp parallel for
         for (size_t idx = 0; idx < numpixels; ++idx)
         {
-            int x = idx % width;
-            int y = idx / width;
+            const int x = idx % width;
+            const int y = idx / width;
 
             // Get the pixel color
-            CRGB color = buffer->ColorData()[idx];
+            const CRGB color = buffer->ColorData()[idx];
 
             // Set the pixel in the matrix (x is flipped)
             matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
@@ -87,6 +85,15 @@ class MatrixDraw
     }
 
   public:
+
+    // FPS
+    // 
+    // The framerate as of the last drawing operation
+
+    static double FPS()
+    {
+        return _FPS;
+    }
 
     // RunDrawLoop
     // 
@@ -98,8 +105,11 @@ class MatrixDraw
         // as fast as possible to catch up to the current time
         constexpr auto burnExtraFrames = false;
 
-        // How long to wait (micros) when no frames available in the buffer
-        constexpr auto kMaximumWait = 10000.0;  
+        // How long to wait (micros) when no frames available in the buffer (about 1/24th of a second).  Can't be
+        // too long, as if frames come in it will take that long to catch up.  But can't be too short, as it would
+        // burn too much CPU spinning in a tight loop.  So this is a compromise that seems appropriate for video.
+
+        constexpr auto kMaximumWait = 40000.0;  
 
         while (!interrupt_received)
         {
@@ -114,15 +124,10 @@ class MatrixDraw
 
                 DrawFrame(buffer.value(), matrix);
             }
-            int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * MICROS_PER_SECOND);
+            const int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * MICROS_PER_SECOND);
             if (delay > 0)
                 std::this_thread::sleep_for(std::chrono::microseconds(delay));
         }
 	    return true;
-    }
-
-    static double FPS()
-    {
-        return _FPS;
     }
 };
