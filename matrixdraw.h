@@ -33,6 +33,7 @@
 #include "ledbuffer.h"
 #include <thread>
 #include <chrono>
+#include <omp.h>  // Include OpenMP header
 
 using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
@@ -66,10 +67,12 @@ class MatrixDraw
         //       if the matrix is larger than the frame, but for now, we just require that the frames being
         //       sent are the same size as the matrix.
 
-        if (buffer->ColorData().size() != width * height)
-            throw std::runtime_error("Size mismatch between data and matrix.");
+        if (buffer->ColorData().size() > numpixels)
+            throw std::runtime_error("More data received than matrix can accomodate");
             
         // Process the entire frame in a single loop for better cache locality
+
+        #pragma omp parallel for
         for (size_t idx = 0; idx < numpixels; ++idx)
         {
             int x = idx % width;
@@ -100,11 +103,6 @@ class MatrixDraw
 
         while (!interrupt_received)
         {
-            // There may be a slight race condition here, where the oldest buffer is popped and then
-            // replaced by another before we wind up grabbing it, but that's not a big deal.  It'd be
-            // serious if were were popping thhe last buffer, but the optional<> nature of the return
-            // value means we can handle that case just fine.
-
             while (bufferManager.AgeOfOldestBuffer() <= 0)
             {
                 std::optional<std::unique_ptr<LEDBuffer>> buffer = bufferManager.PopOldestBuffer();

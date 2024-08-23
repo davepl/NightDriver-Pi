@@ -36,9 +36,7 @@
 #include "socketserver.h"
 #include "matrixdraw.h"
 
-using rgb_matrix::Canvas;
 using rgb_matrix::RGBMatrix;
-using rgb_matrix::FrameCanvas;
 
 // Our interrupt handler sets a global flag indicating that it is time to exit
 
@@ -76,22 +74,22 @@ int main(int argc, char *argv[])
     // Initialize the RGB matrix with
     RGBMatrix::Options matrix_options;
 
-    // Our defaults, which can all be overridden from the command line
-    matrix_options.hardware_mapping      = DefaultHardwareMapping;
-    matrix_options.chain_length          = DefaultChainLength;
-    matrix_options.rows                  = DefualtRows;
-    matrix_options.cols                  = DefaultColumns;
+    // Our defaults, which can all be overridden from the command line.  We default to a 32x64x8 matrix chain.
+    // By limiting the refresh to 60Hz and not busy waiting, we can keep the CPU load down under 50% of a 
+    // single core while still receiveing and unpacking full video frames
 
-    // By limiting the refresh to 60Hz and not busy waiting, we can keep the CPU load down
-    // under 50% of a single core while still receiveing and unpacking. full video frames
-    matrix_options.limit_refresh_rate_hz = DefaultRefreshRate;
-    matrix_options.disable_busy_waiting  = DefaultDisableBusyWaiting;
+    matrix_options.hardware_mapping      = kDefaultHardwareMapping;
+    matrix_options.chain_length          = kDefaultChainLength;
+    matrix_options.rows                  = kDefualtRows;
+    matrix_options.cols                  = kDefaultColumns;
+    matrix_options.limit_refresh_rate_hz = kDefaultRefreshRate;
+    matrix_options.disable_busy_waiting  = kDefaultDisableBusyWaiting;
 
     // User can override the defaults from the command line
     rgb_matrix::RuntimeOptions runtime_opt;
     if (!rgb_matrix::ParseOptionsFromFlags(&argc, &argv, &matrix_options, &runtime_opt)) 
         return usage(argv[0]);
-    runtime_opt.gpio_slowdown = DefaultGPIOSlowdown;
+    runtime_opt.gpio_slowdown = kDefaultGPIOSlowdown;
 
     RGBMatrix *matrix = RGBMatrix::CreateFromOptions(matrix_options, runtime_opt);
     if (!matrix)
@@ -100,14 +98,12 @@ int main(int argc, char *argv[])
          	return 1;
     }   
 
-    auto maxLEDs = matrix->width() * matrix->height();
+    const auto maxLEDs = matrix->width() * matrix->height();
     printf("Matrix Size: %dx%d (%d LEDs)\n", matrix->width(), matrix->height(), maxLEDs);
-
-    matrix->Clear();
     matrix->Fill(0, 0, 128);
 
-    LEDBufferManager bufferManager(250);
-    SocketServer socketServer(49152, maxLEDs);
+    LEDBufferManager bufferManager(kMaxBuffers);
+    SocketServer socketServer(kIncomingSocketPort, maxLEDs);
 
     // Launch the socket server on its own thread to process incoming packets
 

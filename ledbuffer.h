@@ -114,8 +114,8 @@ class LEDBuffer
         if (payloadLength < length32 * sizeof(CRGB) + cbHeader)
             throw LEDBufferException("Data size mismatch: insufficient data for expected length");
 
-        const CRGB * pData = reinterpret_cast<const CRGB *>(&payloadData[cbHeader]);
-        return std::make_unique<LEDBuffer>(pData, length32, seconds, micros);
+        // Create and return a new LEDBuffer object by passing in the CRGB color data, length, and timestamp
+        return std::make_unique<LEDBuffer>(reinterpret_cast<const CRGB *>(&payloadData[cbHeader]), length32, seconds, micros);
     }
 };
 
@@ -213,10 +213,10 @@ public:
         if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex)
             _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
 
-        // Insert the new buffer
+        // Insert the new buffer.  If this overwrites an existing buffer, it will be destroyed and freed
         _aptrBuffers[_iHeadIndex] = std::move(pBuffer);
 
-        // Advance head index
+        // Advance head index around the circular buffer
         _iHeadIndex = (_iHeadIndex + 1) % _cMaxBuffers;
     }
 };

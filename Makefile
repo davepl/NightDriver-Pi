@@ -5,7 +5,7 @@
 # -MP:  This flag adds phony targets for each header file to avoid issues if the header is deleted. This prevents
 #       Make from throwing an error when it tries to rebuild based on a deleted header.
 
-CFLAGS=-Wall -Ofast -g -Wextra -Wno-unused-parameter -MMD -MP -std=c++20
+CFLAGS=-Wall -fopenmp -Ofast -g -Wextra -Wno-unused-parameter -MMD -MP -std=c++20
 CXXFLAGS=$(CFLAGS)
 OBJECTS=main.o
 BINARIES=ndpi
@@ -18,7 +18,7 @@ RGB_INCDIR=$(RGB_LIB_DISTRIBUTION)/include
 RGB_LIBDIR=$(RGB_LIB_DISTRIBUTION)/lib
 RGB_LIBRARY_NAME=rgbmatrix
 RGB_LIBRARY=$(RGB_LIBDIR)/lib$(RGB_LIBRARY_NAME).a
-LDFLAGS+=-L$(RGB_LIBDIR) -l$(RGB_LIBRARY_NAME) -lrt -lm -lpthread -lstdc++ -lz
+LDFLAGS+=-L$(RGB_LIBDIR) -l$(RGB_LIBRARY_NAME) -lrt -lm -lpthread -lstdc++ -lz -lgomp
 
 all : $(BINARIES)
 
