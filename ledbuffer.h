@@ -54,7 +54,7 @@ class LEDBufferException : public std::runtime_error
 
 // LEDBuffer
 //
-// Represents a frame of LED data with a timestamp.  The data is a deque of CRGB objects.
+// Represents a frame of LED data with a timestamp.  The data is a vector of CRGB objects.
 // The timestamp is in seconds and microseconds since the epoch.
 
 class LEDBuffer
