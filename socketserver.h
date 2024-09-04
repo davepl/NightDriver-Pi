@@ -40,6 +40,8 @@
 #include <span>
 #include <memory>
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 #include "ledbuffer.h"
 #include "matrixdraw.h"
@@ -110,7 +112,7 @@ public:
         _cbReceived(0)
     {
         _abOutputBuffer = std::make_unique<uint8_t []>(_maximumPacketSize);        // Must add +1 for LZ bug case in Arduino library if ever backported there
-        _pBuffer = std::make_unique<uint8_t []>(_maximumPacketSize);
+        _pBuffer        = std::make_unique<uint8_t []>(_maximumPacketSize);
         memset(&_address, 0, sizeof(_address));
     }
 
@@ -131,7 +133,6 @@ public:
         if ((_server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         {
             printf("socket error\n");
-            release();
             return false;
         }
 
@@ -178,10 +179,10 @@ public:
     // Takes the packet in raw form, decodes enough of it to inspect the command and channel, and then creates and pushes
     // a new LEDBuffer for the data when appropriate.
 
-    bool ProcessIncomingData(LEDBufferManager & bufferManager, std::span<const uint8_t> payload)
+    static bool ProcessIncomingData(LEDBufferManager & bufferManager, std::span<const uint8_t> payload)
     {
         const auto payloadData = payload.data();
-        uint16_t command16 = payloadData[1] << 8 | payloadData[0];
+        uint16_t command16 = WORDFromMemory(&payloadData[0]);
         if (command16 == WIFI_COMMAND_PIXELDATA64)
         {
             uint16_t channel16 = WORDFromMemory(&payloadData[2]);
@@ -217,7 +218,7 @@ public:
     //
     // Read from the socket until the buffer contains at least cbNeeded bytes
 
-    bool ReadUntilNBytesReceived(size_t socket, size_t cbNeeded)
+    bool ReadUntilNBytesReceived(size_t socket, size_t cbNeeded) const 
     {
         if (cbNeeded <= _cbReceived)                            // If we already have that many bytes, we're already done
             return true;
@@ -226,17 +227,17 @@ public:
         // the buffer itself and this test might need to change
 
         if (cbNeeded > _maximumPacketSize)
+        {
+            printf("Packet size %zu exceeds maximum packet size %lu\n", cbNeeded, _maximumPacketSize);
             return false;
+        }
 
         do
-        {
-            // If we're reading at a point in the buffer more than just the header, we're actually transferring data, so light up the LED
-
+        {   // If we're reading at a point in the buffer more than just the header, we're actually transferring data, so light up the LED
             // Read data from the socket until we have _bcNeeded bytes in the buffer
 
             int cbRead = 0;
-            do 
-            {
+            do {
                 cbRead = read(socket, (uint8_t *) _pBuffer.get() + _cbReceived, cbNeeded - _cbReceived);
             } while (cbRead < 0 && errno == EINTR);
 
@@ -262,21 +263,25 @@ public:
 
     bool ProcessIncomingConnectionsLoop(LEDBufferManager & bufferManager)
     {
+        // If an accept fails, we'll sleep this long in ms and try again
+        constexpr auto kSocketRetryDelay = 500;
+
         while (!interrupt_received)
         {
             if (0 >= _server_fd)
             {
                 printf("No _server_fd, returning.");
-                continue;
+                return false;
             }
 
-            int new_socket = 0;
-
             // Accept a new incoming connnection
+
+            int new_socket = 0;
             int addrlen = sizeof(_address);
             if ((new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t*)&addrlen))<0)
             {
                 printf("Error accepting data!");
+                std::this_thread::sleep_for(std::chrono::milliseconds(kSocketRetryDelay));
                 continue;
             }
 
@@ -286,12 +291,13 @@ public:
             socklen_t addr_size = sizeof(struct sockaddr_in);
             if (0 != getpeername(new_socket, (struct sockaddr *)&addr, &addr_size))
             {
+                printf("Unable to get peer name from socket!");
                 close(new_socket);
                 ResetReadBuffer();
                 continue;
             }
 
-            printf("Incoming connection from: %s", inet_ntoa(addr.sin_addr));
+            //printf("Incoming connection from: %s", inet_ntoa(addr.sin_addr));
 
             // Set a timeout of 3 seconds on the socket so we don't permanently hang on a corrupt or partial packet
 
@@ -335,14 +341,12 @@ public:
 
                 // Now that we have the header we can see how much more data is expected to follow
 
-                const uint32_t header  = _pBuffer[3] << 24  | _pBuffer[2] << 16  | _pBuffer[1] << 8  | _pBuffer[0];
+                const uint32_t header  = DWORDFromMemory(_pBuffer.get());
                 if (header == COMPRESSED_HEADER_TAG)
                 {
-                    uint32_t compressedSize = _pBuffer[7] << 24  | _pBuffer[6] << 16  | _pBuffer[5] << 8  | _pBuffer[4];
-                    uint32_t expandedSize   = _pBuffer[11] << 24 | _pBuffer[10] << 16 | _pBuffer[9] << 8  | _pBuffer[8];
-                    // Unused: uint32_t reserved       = _pBuffer[15] << 24 | _pBuffer[14] << 16 | _pBuffer[13] << 8 | _pBuffer[12];
-                    //printf("Compressed Header: compressedSize: %u, expandedSize: %u, reserved: %u", compressedSize, expandedSize, reserved);
-
+                    uint32_t compressedSize = DWORDFromMemory(_pBuffer.get() + 4);
+                    uint32_t expandedSize   = DWORDFromMemory(_pBuffer.get() + 8);
+      
                     if (expandedSize > _maximumPacketSize)
                     {
                         printf("Expanded packet would be %u but buffer is only %lu !!!!\n", expandedSize, _maximumPacketSize);
@@ -376,18 +380,11 @@ public:
                 }
                 else
                 {     
-                    uint16_t command16   = WORDFromMemory(&_pBuffer.get()[0]);            
+                    uint16_t command16   = WORDFromMemory(_pBuffer.get());            
                     if (command16 == WIFI_COMMAND_PIXELDATA64)
                     {
                         // We know it's pixel data, so we do some validation before calling Process.
-
-                        // Unused: uint16_t channel16 = WORDFromMemory(&_pBuffer.get()[2]);
-                        uint32_t length32  = DWORDFromMemory(&_pBuffer.get()[4]);
-                        // Unused: uint64_t seconds   = ULONGFromMemory(&_pBuffer.get()[8]);
-                        // Unused: uint64_t micros    = ULONGFromMemory(&_pBuffer.get()[16]);
-
-                        //printf("Uncompressed Header: channel16=%u, length=%u, seconds=%llu, micro=%llu", channel16, length32, seconds, micros);
-
+                        uint32_t length32  = DWORDFromMemory(_pBuffer.get()+4);
                         size_t totalExpected = STANDARD_DATA_HEADER_SIZE + length32 * LED_DATA_SIZE;
                         if (totalExpected > _maximumPacketSize)
                         {
@@ -456,13 +453,12 @@ public:
                     {
                         std::cerr << e.what() << '\n';
                     }
-                    
                 }
             } while (true);
 
             close(new_socket);
             ResetReadBuffer();
-            sleep(1);
+            std::this_thread::sleep_for(std::chrono::milliseconds(kSocketRetryDelay));
         }
         return true;
     }
@@ -471,7 +467,7 @@ public:
     //
     // Use unzlib to decompress a memory buffer
 
-    bool DecompressBuffer(const uint8_t* pBuffer, size_t cBuffer, uint8_t* pOutput, size_t expectedOutputSize) 
+    bool DecompressBuffer(const uint8_t * pBuffer, size_t cBuffer, uint8_t * pOutput, size_t expectedOutputSize) const
     {
         z_stream stream;
         memset(&stream, 0, sizeof(stream));
@@ -484,6 +480,7 @@ public:
 
         // Choose appropriate initialization based on compression format
         // Use -MAX_WBITS for raw deflate; for zlib/gzip header use different options
+        // MAX_WBITS seems to work with what the PC side sends
 
         int ret = inflateInit2(&stream, MAX_WBITS);  
         if (ret != Z_OK) {
@@ -494,7 +491,7 @@ public:
         // Perform the decompression
         do 
         {
-            ret = inflate(&stream, Z_NO_FLUSH); // Use Z_NO_FLUSH for incremental decompression
+            ret = inflate(&stream, Z_FINISH);   // Use Z_NO_FLUSH for incremental decompression
             if (ret == Z_STREAM_ERROR) 
             {
                 printf("Stream error during decompression\n");
