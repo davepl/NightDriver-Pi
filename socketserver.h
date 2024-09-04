@@ -218,7 +218,7 @@ public:
     //
     // Read from the socket until the buffer contains at least cbNeeded bytes
 
-    bool ReadUntilNBytesReceived(size_t socket, size_t cbNeeded) const 
+    bool ReadUntilNBytesReceived(size_t socket, size_t cbNeeded) 
     {
         if (cbNeeded <= _cbReceived)                            // If we already have that many bytes, we're already done
             return true;

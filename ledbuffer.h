@@ -35,7 +35,7 @@
 
 #include <memory>
 #include <iostream>
-#include <vector>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -54,7 +54,7 @@ class LEDBufferException : public std::runtime_error
 
 // LEDBuffer
 //
-// Represents a frame of LED data with a timestamp.  The data is a vector of CRGB objects.
+// Represents a frame of LED data with a timestamp.  The data is a deque of CRGB objects.
 // The timestamp is in seconds and microseconds since the epoch.
 
 class LEDBuffer
@@ -63,7 +63,7 @@ class LEDBuffer
 
   private:
 
-    std::vector<CRGB> _leds;
+    std::deque<CRGB> _leds;
     const uint64_t    _timeStampMicroseconds;
     const uint64_t    _timeStampSeconds;
 
@@ -83,7 +83,7 @@ class LEDBuffer
     constexpr uint64_t Seconds()      const  { return _timeStampSeconds;      }
     constexpr uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
     
-    const std::vector<CRGB> & ColorData() const
+    const std::deque<CRGB> & ColorData() const
     {
         return _leds;
     }
@@ -127,24 +127,22 @@ class LEDBuffer
 
 class LEDBufferManager
 {
-    std::vector<std::unique_ptr<LEDBuffer>> _aptrBuffers;   // The circular array of buffer ptrs
-    size_t _iHeadIndex;                                     // Head pointer index
-    size_t _iTailIndex;                                     // Tail pointer index
-    size_t _cMaxBuffers;                                    // Number of buffers
-    mutable std::recursive_mutex _mutex;                    // Recursive mutex to protect the buffer
+    std::deque<std::unique_ptr<LEDBuffer>> _buffers;  // The deque of buffer pointers
+    size_t _cMaxBuffers;                              // Maximum number of buffers
+    mutable std::mutex _mutex;              // Recursive mutex to protect the buffer
 
 public:
     explicit LEDBufferManager(size_t cBuffers)
-        : _aptrBuffers(cBuffers), _iHeadIndex(0), _iTailIndex(0), _cMaxBuffers(cBuffers)
+        : _cMaxBuffers(cBuffers)
     {}
 
     double AgeOfOldestBuffer() const
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
 
-        if (!IsEmpty())
+        if (!_buffers.empty())
         {
-            const auto & pOldest = _aptrBuffers[_iTailIndex].get();
+            const auto & pOldest = _buffers.front().get();
             return (pOldest->Seconds() + pOldest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;
@@ -152,13 +150,11 @@ public:
 
     double AgeOfNewestBuffer() const
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before accessing the buffer
 
-        if (!IsEmpty())
+        if (!_buffers.empty())
         {
-            // Find the index of the newest buffer
-            size_t newestIndex = (_iHeadIndex == 0) ? _cMaxBuffers - 1 : _iHeadIndex - 1;
-            const auto & pNewest = _aptrBuffers[newestIndex];
+            const auto & pNewest = _buffers.back();
             return (pNewest->Seconds() + pNewest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
         return MAXDOUBLE;
@@ -171,18 +167,9 @@ public:
 
     size_t Size() const
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer parameters
-        if (_iHeadIndex < _iTailIndex)
-            return (_iHeadIndex + _cMaxBuffers - _iTailIndex);
-        else
-            return _iHeadIndex - _iTailIndex;
+        return _buffers.size();
     }
 
-    bool IsEmpty() const
-    {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before accessing the buffer head and tail
-        return _iHeadIndex == _iTailIndex;
-    }
 
     // PopOldestBuffer
     //
@@ -190,13 +177,13 @@ public:
     
     std::optional<std::unique_ptr<LEDBuffer>> PopOldestBuffer()
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
 
-        if (IsEmpty()) 
+        if (_buffers.empty()) 
             return std::nullopt;  // Return empty optional if the buffer is empty
 
-        auto pResult = std::move(_aptrBuffers[_iTailIndex]);
-        _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
+        auto pResult = std::move(_buffers.front());
+        _buffers.pop_front();  // Remove the oldest buffer from the front
 
         return std::optional<std::unique_ptr<LEDBuffer>>(std::move(pResult));
     }
@@ -207,16 +194,13 @@ public:
 
     void PushNewBuffer(std::unique_ptr<LEDBuffer> pBuffer)
     {
-        std::lock_guard<std::recursive_mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
+        std::lock_guard<std::mutex> lock(_mutex);  // Lock the mutex before modifying the buffer
 
         // If the queue is full, pop the oldest buffer to make space
-        if ((_iHeadIndex + 1) % _cMaxBuffers == _iTailIndex)
-            _iTailIndex = (_iTailIndex + 1) % _cMaxBuffers;
+        if (_buffers.size() == _cMaxBuffers)
+            _buffers.pop_front();
 
-        // Insert the new buffer.  If this overwrites an existing buffer, it will be destroyed and freed
-        _aptrBuffers[_iHeadIndex] = std::move(pBuffer);
-
-        // Advance head index around the circular buffer
-        _iHeadIndex = (_iHeadIndex + 1) % _cMaxBuffers;
+        // Add the new buffer to the back of the deque
+        _buffers.push_back(std::move(pBuffer));
     }
 };
