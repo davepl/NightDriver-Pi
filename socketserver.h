@@ -46,6 +46,8 @@
 #include "ledbuffer.h"
 #include "matrixdraw.h"
 
+using namespace std::chrono_literals;
+
 #define STANDARD_DATA_HEADER_SIZE   24                                              // Size of the header for expanded data
 #define COMPRESSED_HEADER_SIZE      16                                              // Size of the header for compressed data
 #define LED_DATA_SIZE               sizeof(CRGB)                                    // Data size of an LED (24 bits or 3 bytes)
@@ -97,9 +99,10 @@ private:
     int                         _port;
     int                         _server_fd;
     struct sockaddr_in          _address;
+    size_t                      _maximumPacketSize;
     std::unique_ptr<uint8_t []> _pBuffer;
     std::unique_ptr<uint8_t []> _abOutputBuffer;
-    size_t                      _maximumPacketSize;
+
 
 public:
 
@@ -108,12 +111,12 @@ public:
     SocketServer(int port, size_t maxLEDs) :
         _port(port),
         _server_fd(-1),
+        _address{},
         _maximumPacketSize(STANDARD_DATA_HEADER_SIZE + LED_DATA_SIZE * maxLEDs),
+        _pBuffer(std::make_unique<uint8_t []>(_maximumPacketSize)),        
+        _abOutputBuffer(std::make_unique<uint8_t []>(_maximumPacketSize)),
         _cbReceived(0)
     {
-        _abOutputBuffer = std::make_unique<uint8_t []>(_maximumPacketSize);        // Must add +1 for LZ bug case in Arduino library if ever backported there
-        _pBuffer        = std::make_unique<uint8_t []>(_maximumPacketSize);
-        memset(&_address, 0, sizeof(_address));
     }
 
     void release()
@@ -148,7 +151,6 @@ public:
             return false;
         }
 
-        memset(&_address, 0, sizeof(_address));
         _address.sin_family      = AF_INET;
         _address.sin_addr.s_addr = INADDR_ANY;
         _address.sin_port        = htons( _port );
@@ -264,7 +266,7 @@ public:
     bool ProcessIncomingConnectionsLoop(LEDBufferManager & bufferManager)
     {
         // If an accept fails, we'll sleep this long in ms and try again
-        constexpr auto kSocketRetryDelay = 500;
+        constexpr std::chrono::milliseconds kSocketRetryDelay = 500ms;
 
         while (!interrupt_received)
         {
@@ -281,7 +283,7 @@ public:
             if ((new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t*)&addrlen))<0)
             {
                 printf("Error accepting data!");
-                std::this_thread::sleep_for(std::chrono::milliseconds(kSocketRetryDelay));
+                std::this_thread::sleep_for(kSocketRetryDelay);
                 continue;
             }
 
@@ -360,9 +362,13 @@ public:
                     }
                     //printf("Successfuly read %u bytes", COMPRESSED_HEADER_SIZE + compressedSize);
 
-                    auto pSourceBuffer = &_pBuffer[COMPRESSED_HEADER_SIZE];
+                    // Define the source buffer span, excluding the compressed header
+                    
+                    auto sourceSpan = std::span<const uint8_t>(&_pBuffer[COMPRESSED_HEADER_SIZE], compressedSize);
+                    auto outputSpan = std::span<uint8_t>(_abOutputBuffer.get(), expandedSize);
 
-                    if (!DecompressBuffer(pSourceBuffer, compressedSize, _abOutputBuffer.get(), expandedSize))
+                    // Call the DecompressBuffer function with the spans
+                    if (!DecompressBuffer(sourceSpan, outputSpan))
                     {
                         printf("Error decompressing data\n");
                         break;
@@ -467,31 +473,29 @@ public:
     //
     // Use unzlib to decompress a memory buffer
 
-    bool DecompressBuffer(const uint8_t * pBuffer, size_t cBuffer, uint8_t * pOutput, size_t expectedOutputSize) const
+    static bool DecompressBuffer(std::span<const uint8_t> inputBuffer, std::span<uint8_t> outputBuffer)
     {
         z_stream stream;
         memset(&stream, 0, sizeof(stream));
 
         // Initialize the stream for decompression
-        stream.next_in   = const_cast<Bytef*>(pBuffer); // Input buffer
-        stream.avail_in  = cBuffer;                   // Input buffer size
-        stream.next_out  = pOutput;                   // Output buffer
-        stream.avail_out = expectedOutputSize;       // Output buffer size
+        stream.next_in   = const_cast<Bytef*>(inputBuffer.data()); // Input buffer
+        stream.avail_in  = inputBuffer.size();                    // Input buffer size
+        stream.next_out  = outputBuffer.data();                   // Output buffer
+        stream.avail_out = outputBuffer.size();                  // Output buffer size
 
         // Choose appropriate initialization based on compression format
-        // Use -MAX_WBITS for raw deflate; for zlib/gzip header use different options
-        // MAX_WBITS seems to work with what the PC side sends
-
         int ret = inflateInit2(&stream, MAX_WBITS);  
-        if (ret != Z_OK) {
-            printf("ERROR: zlib inflateInit2 failed with code %d\n", ret);
+        if (ret != Z_OK) 
+        {
+            std::printf("ERROR: zlib inflateInit2 failed with code %d\n", ret);
             return false;
         }
 
         // Perform the decompression
         do 
         {
-            ret = inflate(&stream, Z_FINISH);   // Use Z_NO_FLUSH for incremental decompression
+            ret = inflate(&stream, Z_FINISH);
             if (ret == Z_STREAM_ERROR) 
             {
                 printf("Stream error during decompression\n");
@@ -518,9 +522,9 @@ public:
         } while (ret != Z_STREAM_END);
 
         // Ensure the decompressed size matches the expected size
-        if (stream.total_out != expectedOutputSize) 
+        if (stream.total_out != outputBuffer.size()) 
         {
-            printf("Expected %zu bytes, but decompressed to %lu bytes instead\n", expectedOutputSize, stream.total_out);
+            printf("Expected %zu bytes, but decompressed to %lu bytes instead\n", outputBuffer.size(), stream.total_out);
             inflateEnd(&stream);
             return false;
         }
