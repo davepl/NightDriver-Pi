@@ -21,17 +21,16 @@
 //
 // Description:
 //
-//    Hosts a socket server on port 49152 to receive LED data from the master
-//    and then draws that data to the LED matrix
+//    Hosts a socket server on port 49152 to receive LED data from a remote
+//    NightDriverDesktop instance and then draws that data to the LED matrix
 //
 // History:     Aug-14-2024     Davepl      Created from NightDriverStrip
 //---------------------------------------------------------------------------
 
-#include "led-matrix.h"
-
 #include <signal.h>
 #include "apptime.h"
 #include "globals.h"
+#include "led-matrix.h"
 #include "ledbuffer.h"
 #include "socketserver.h"
 #include "matrixdraw.h"
@@ -97,6 +96,7 @@ int main(int argc, char *argv[])
     	fprintf(stderr, "Error creating RGBMatrix object\n");
          	return 1;
     }   
+    matrix->set_luminance_correct(true);
 
     const auto maxLEDs = matrix->width() * matrix->height();
     printf("Matrix Size: %dx%d (%d LEDs)\n", matrix->width(), matrix->height(), maxLEDs);

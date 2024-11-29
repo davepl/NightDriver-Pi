@@ -57,6 +57,9 @@
         "typeinfo": "cpp",
         "condition_variable": "cpp",
         "mutex": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "bitset": "cpp",
+        "fstream": "cpp",
+        "cinttypes": "cpp"
     }
 }
