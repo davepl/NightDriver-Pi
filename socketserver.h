@@ -437,12 +437,12 @@ public:
 
                     SocketResponse response = {
                                                 .size = sizeof(SocketResponse),
-                                                .flashVersion = 0,
+                                                .flashVersion = 41,
                                                 .currentClock = CAppTime::CurrentTime(),
                                                 .oldestPacket = bufferManager.AgeOfOldestBuffer(),
                                                 .newestPacket = bufferManager.AgeOfNewestBuffer(),
                                                 .brightness   = 100,
-                                                .wifiSignal   = 99,
+                                                .wifiSignal   = 1000,
                                                 .bufferSize   = (uint32_t)bufferManager.Capacity(),
                                                 .bufferPos    = (uint32_t)bufferManager.Size(),
                                                 .fpsDrawing   = (uint32_t)MatrixDraw::FPS(),

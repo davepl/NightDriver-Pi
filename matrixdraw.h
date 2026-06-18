@@ -33,7 +33,6 @@
 #include "ledbuffer.h"      // The LED circular buffer manager
 #include <thread>           // For spawning threads
 #include <chrono>           // Time and delays
-#include <omp.h>            // Include OpenMP header
 
 using rgb_matrix::RGBMatrix;
 
@@ -47,9 +46,9 @@ class MatrixDraw
 	
     // DrawFrame
     //
-    // Sends a frame's worth of color data to the matrix and then swaps it on the next VSync
+    // Draws a frame's worth of color data to an offscreen canvas.
 	
-    static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, RGBMatrix & matrix)
+    static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, rgb_matrix::FrameCanvas & canvas)
     {
         static double lastTime = 0.0;
         double currentTime = CAppTime::CurrentTime();
@@ -57,30 +56,31 @@ class MatrixDraw
         lastTime = currentTime;
         _FPS =  1.0 / delta;
 
-        const size_t width = matrix.width();
-        const size_t height = matrix.height();
+        const size_t width = canvas.width();
+        const size_t height = canvas.height();
         const size_t numpixels = width * height;
+        const auto & colorData = buffer->ColorData();
 
         // TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
         //       if the matrix is larger than the frame, but for now, we just require that the frames being
         //       sent are the same size as the matrix.
 
-        if (buffer->ColorData().size() > numpixels)
-            throw std::runtime_error("More data received than matrix can accomodate");
-            
-        // Process the entire frame in a single loop for better cache locality
+        if (colorData.size() != numpixels)
+            throw std::runtime_error("Frame size does not match matrix size");
+	            
+        // Process the entire frame in a single loop for better cache locality.
+        // Framebuffer::SetPixel() updates packed bitplane words, so avoid parallel writes here.
 
-        #pragma omp parallel for
         for (size_t idx = 0; idx < numpixels; ++idx)
         {
             const int x = idx % width;
             const int y = idx / width;
 
             // Get the pixel color
-            const CRGB color = buffer->ColorData()[idx];
+            const CRGB color = colorData[idx];
 
             // Set the pixel in the matrix (x is flipped)
-            matrix.SetPixel(matrix.width() - 1 - x, y, color.r, color.g, color.b);
+            canvas.SetPixel(canvas.width() - 1 - x, y, color.r, color.g, color.b);
         }
     }
 
@@ -101,6 +101,10 @@ class MatrixDraw
 
     static bool RunDrawLoop(LEDBufferManager & bufferManager, RGBMatrix & matrix)
     {
+        rgb_matrix::FrameCanvas * offscreenCanvas = matrix.CreateFrameCanvas();
+        if (offscreenCanvas == nullptr)
+            throw std::runtime_error("Unable to create offscreen matrix canvas");
+
         // If set to true, this will cause backlogged frames to be discarded.  If false, they will be drawn
         // as fast as possible to catch up to the current time
         constexpr auto burnExtraFrames = false;
@@ -122,7 +126,11 @@ class MatrixDraw
                 if (burnExtraFrames && bufferManager.AgeOfOldestBuffer() <= 0)
                     continue;
 
-                DrawFrame(buffer.value(), matrix);
+                DrawFrame(buffer.value(), *offscreenCanvas);
+
+                offscreenCanvas = matrix.SwapOnVSync(offscreenCanvas);
+                if (offscreenCanvas == nullptr)
+                    throw std::runtime_error("SwapOnVSync failed");
             }
             const int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * MICROS_PER_SECOND);
             if (delay > 0)
