@@ -32,6 +32,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -42,6 +44,10 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <atomic>
+#include <csignal>
+#include <mutex>
+#include <limits>
 
 #include "ledbuffer.h"
 #include "matrixdraw.h"
@@ -52,12 +58,11 @@ using namespace std::chrono_literals;
 #define COMPRESSED_HEADER_SIZE      16                                              // Size of the header for compressed data
 #define LED_DATA_SIZE               sizeof(CRGB)                                    // Data size of an LED (24 bits or 3 bytes)
 
-// We allocate whatever the max packet is, and use it to validate incoming packets, so right now, it's set to the maximum
-// LED data packet you could have (header plus 3 RGBs per NUM_LED)
+// Expanded packets contain the header plus three RGB bytes per configured pixel.
+// Incoming storage also allows the zlib worst case plus its compressed header.
 
 #define COMPRESSED_HEADER_TAG (0x44415645)                                              // asci "DAVE" as header
 
-extern volatile bool interrupt_received;
 
 // SocketResponse
 //
@@ -100,9 +105,28 @@ private:
     int                         _server_fd;
     struct sockaddr_in          _address;
     size_t                      _maximumPacketSize;
+    size_t                      _maximumReadSize;
+    size_t                      _expectedPixels;
+    std::atomic<bool>            _stopping{false};
+    std::mutex                  _socketMutex;
+    int                         _client_fd = -1;
     std::unique_ptr<uint8_t []> _pBuffer;
     std::unique_ptr<uint8_t []> _abOutputBuffer;
 
+
+    static size_t MaximumPacketSize(size_t pixels)
+    {
+        constexpr size_t maximum = std::min(size_t(std::numeric_limits<uInt>::max()),
+                                             std::numeric_limits<size_t>::max());
+        if (pixels == 0 || pixels > std::numeric_limits<uint32_t>::max() ||
+            pixels > (maximum - STANDARD_DATA_HEADER_SIZE) / LED_DATA_SIZE)
+            throw std::invalid_argument("Display pixel count exceeds supported NightDriver frame size");
+        const size_t raw = STANDARD_DATA_HEADER_SIZE + pixels * LED_DATA_SIZE;
+        const uLong bound = compressBound(raw);
+        if (bound < raw || bound > maximum - COMPRESSED_HEADER_SIZE)
+            throw std::invalid_argument("Compressed frame capacity exceeds supported size");
+        return raw;
+    }
 
 public:
 
@@ -112,11 +136,20 @@ public:
         _port(port),
         _server_fd(-1),
         _address{},
-        _maximumPacketSize(STANDARD_DATA_HEADER_SIZE + LED_DATA_SIZE * maxLEDs),
-        _pBuffer(std::make_unique<uint8_t []>(_maximumPacketSize)),        
+        _maximumPacketSize(MaximumPacketSize(maxLEDs)),
+        _maximumReadSize(std::max(_maximumPacketSize, size_t(COMPRESSED_HEADER_SIZE) + compressBound(_maximumPacketSize))),
+        _expectedPixels(maxLEDs),
+        _pBuffer(std::make_unique<uint8_t []>(_maximumReadSize)),
         _abOutputBuffer(std::make_unique<uint8_t []>(_maximumPacketSize)),
         _cbReceived(0)
     {
+    }
+
+    ~SocketServer()
+    {
+        // The owning main thread joins the worker before this destructor.
+        end();
+        release();
     }
 
     void release()
@@ -167,22 +200,55 @@ public:
             release();
             return false;
         }
+        // poll() bounds shutdown latency. A nonblocking listener also prevents
+        // accept() from blocking if readiness changes before it is called.
+        const int flags = fcntl(_server_fd, F_GETFL, 0);
+        if (flags < 0 || fcntl(_server_fd, F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            perror("setting listener nonblocking");
+            release();
+            return false;
+        }
         return true;
+    }
+
+    int Port() const
+    {
+        sockaddr_in address{};
+        socklen_t length = sizeof(address);
+        if (getsockname(_server_fd, reinterpret_cast<sockaddr *>(&address), &length) != 0)
+            throw std::runtime_error("Unable to query listening port");
+        return ntohs(address.sin_port);
     }
 
     void end()
     {
-        release();
-        return;
+        _stopping.store(true);
+        std::lock_guard<std::mutex> lock(_socketMutex);
+        // poll() bounds the idle listener wait; shutdown wakes active reads and
+        // writes. Do not close a descriptor while the worker can still use it.
+        // The worker closes the client; the destructor closes the listener.
+        if (_client_fd >= 0)
+            shutdown(_client_fd, SHUT_RDWR);
     }
-    
+
+    void CloseClient(int fd)
+    {
+        std::lock_guard<std::mutex> lock(_socketMutex);
+        if (_client_fd == fd)
+            _client_fd = -1;
+        close(fd);
+    }
+
     // ProcessIncomingData
     //
     // Takes the packet in raw form, decodes enough of it to inspect the command and channel, and then creates and pushes
     // a new LEDBuffer for the data when appropriate.
 
-    static bool ProcessIncomingData(LEDBufferManager & bufferManager, std::span<const uint8_t> payload)
+    static bool ProcessIncomingData(LEDBufferManager & bufferManager, std::span<const uint8_t> payload, size_t expectedPixels)
     {
+        if (payload.size() < STANDARD_DATA_HEADER_SIZE)
+            return false;
         const auto payloadData = payload.data();
         uint16_t command16 = WORDFromMemory(&payloadData[0]);
         if (command16 == WIFI_COMMAND_PIXELDATA64)
@@ -199,7 +265,7 @@ public:
             
             try
             {
-                bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payload) );
+                bufferManager.PushNewBuffer( LEDBuffer::CreateFromWire(payload, expectedPixels) );
                 return true;
             }
             catch(const LEDBufferException & e)
@@ -213,14 +279,14 @@ public:
     void ResetReadBuffer()
     {
         _cbReceived = 0;
-        memset(_pBuffer.get(), 0, _maximumPacketSize);
+        memset(_pBuffer.get(), 0, _maximumReadSize);
     }
 
     // ReadUntilNBytesReceived
     //
     // Read from the socket until the buffer contains at least cbNeeded bytes
 
-    bool ReadUntilNBytesReceived(size_t socket, size_t cbNeeded) 
+    bool ReadUntilNBytesReceived(int socket, size_t cbNeeded)
     {
         if (cbNeeded <= _cbReceived)                            // If we already have that many bytes, we're already done
             return true;
@@ -228,9 +294,9 @@ public:
         // This test caps maximum packet size as a full buffer read of LED data.  If other packets wind up being longer,
         // the buffer itself and this test might need to change
 
-        if (cbNeeded > _maximumPacketSize)
+        if (cbNeeded > _maximumReadSize)
         {
-            printf("Packet size %zu exceeds maximum packet size %lu\n", cbNeeded, _maximumPacketSize);
+            printf("Packet size %zu exceeds maximum packet size %zu\n", cbNeeded, _maximumReadSize);
             return false;
         }
 
@@ -268,22 +334,67 @@ public:
         // If an accept fails, we'll sleep this long in ms and try again
         constexpr std::chrono::milliseconds kSocketRetryDelay = 500ms;
 
-        while (!interrupt_received)
+        while (!_stopping.load())
         {
-            if (0 >= _server_fd)
+            if (0 > _server_fd)
             {
                 printf("No _server_fd, returning.");
                 return false;
             }
 
-            // Accept a new incoming connnection
-
-            int new_socket = 0;
-            int addrlen = sizeof(_address);
-            if ((new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t*)&addrlen))<0)
+            // shutdown() does not wake a blocked listening accept() on macOS.
+            // Wait in bounded poll() calls, then use nonblocking accept().
+            pollfd listener{_server_fd, POLLIN, 0};
+            const int ready = poll(&listener, 1, 100);
+            if (_stopping.load())
+                break;
+            if (ready < 0)
             {
-                printf("Error accepting data!");
+                if (errno == EINTR)
+                    continue;
+                perror("polling listener");
+                return false;
+            }
+            if (ready == 0)
+                continue;
+            if (listener.revents & (POLLERR | POLLHUP | POLLNVAL))
+            {
+                fprintf(stderr, "Listener became unavailable\n");
+                return false;
+            }
+            if (!(listener.revents & POLLIN))
+                continue;
+
+            socklen_t addrlen = sizeof(_address);
+            const int new_socket = accept(_server_fd, reinterpret_cast<sockaddr *>(&_address), &addrlen);
+            if (new_socket < 0)
+            {
+                if (_stopping.load())
+                    break;
+                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+                perror("accepting data");
                 std::this_thread::sleep_for(kSocketRetryDelay);
+                continue;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(_socketMutex);
+                if (_stopping.load())
+                {
+                    close(new_socket);
+                    break;
+                }
+                _client_fd = new_socket;
+            }
+
+            // BSD systems can inherit the listener's nonblocking flag. Keep
+            // accepted sockets blocking, with the read/write timeouts below.
+            const int clientFlags = fcntl(new_socket, F_GETFL, 0);
+            if (clientFlags < 0 || fcntl(new_socket, F_SETFL, clientFlags & ~O_NONBLOCK) < 0)
+            {
+                perror("setting client blocking");
+                CloseClient(new_socket);
                 continue;
             }
 
@@ -294,7 +405,7 @@ public:
             if (0 != getpeername(new_socket, (struct sockaddr *)&addr, &addr_size))
             {
                 printf("Unable to get peer name from socket!");
-                close(new_socket);
+                CloseClient(new_socket);
                 ResetReadBuffer();
                 continue;
             }
@@ -306,10 +417,11 @@ public:
             struct timeval to;
             to.tv_sec = 3;
             to.tv_usec = 0;
-            if (setsockopt(new_socket,SOL_SOCKET,SO_RCVTIMEO,&to,sizeof(to)) < 0)
+            if (setsockopt(new_socket,SOL_SOCKET,SO_RCVTIMEO,&to,sizeof(to)) < 0 ||
+                setsockopt(new_socket,SOL_SOCKET,SO_SNDTIMEO,&to,sizeof(to)) < 0)
             {
                 printf("Unable to set read timeout on socket!");
-                close(new_socket);
+                CloseClient(new_socket);
                 ResetReadBuffer();
                 continue;
             }
@@ -317,7 +429,7 @@ public:
             if (_pBuffer == nullptr) 
             {
                 printf("Buffer not allocated!");
-                close(new_socket);
+                CloseClient(new_socket);
                 ResetReadBuffer();
                 continue;
             }
@@ -349,7 +461,8 @@ public:
                     uint32_t compressedSize = DWORDFromMemory(_pBuffer.get() + 4);
                     uint32_t expandedSize   = DWORDFromMemory(_pBuffer.get() + 8);
       
-                    if (expandedSize > _maximumPacketSize)
+                    if (expandedSize > _maximumPacketSize || expandedSize < STANDARD_DATA_HEADER_SIZE ||
+                        compressedSize > _maximumReadSize - COMPRESSED_HEADER_SIZE)
                     {
                         printf("Expanded packet would be %u but buffer is only %lu !!!!\n", expandedSize, _maximumPacketSize);
                         break;
@@ -375,7 +488,7 @@ public:
                     }
 
                     auto payload = std::span<const uint8_t>(_abOutputBuffer.get(), expandedSize);
-                    if (false == ProcessIncomingData(bufferManager, payload))
+                    if (false == ProcessIncomingData(bufferManager, payload, _expectedPixels))
                     {
                         printf("Error processing data\n");
                         break;
@@ -391,7 +504,12 @@ public:
                     {
                         // We know it's pixel data, so we do some validation before calling Process.
                         uint32_t length32  = DWORDFromMemory(_pBuffer.get()+4);
-                        size_t totalExpected = STANDARD_DATA_HEADER_SIZE + length32 * LED_DATA_SIZE;
+                        if (length32 != _expectedPixels)
+                        {
+                            printf("Frame pixel count %u does not match configured geometry (%zu)\n", length32, _expectedPixels);
+                            break;
+                        }
+                        size_t totalExpected = STANDARD_DATA_HEADER_SIZE + size_t(length32) * LED_DATA_SIZE;
                         if (totalExpected > _maximumPacketSize)
                         {
                             printf("Too many bytes promised (%zu) - more than we can use for our LEDs at max packet (%lu)\n", totalExpected, _maximumPacketSize);
@@ -408,7 +526,7 @@ public:
                         // Add it to the buffer ring
 
                         auto payload = std::span<const uint8_t>(_pBuffer.get(), totalExpected);
-                        if (false == ProcessIncomingData(bufferManager, payload))
+                        if (false == ProcessIncomingData(bufferManager, payload, _expectedPixels))
                         {
                             printf("Error in processing pixel data from network\n");
                             break;
@@ -452,7 +570,18 @@ public:
                     // I dont think this is fatal, and doesn't affect the read buffer, so content to ignore for now if it happens
                     try
                     {
-                        if (sizeof(response) != write(new_socket, &response, sizeof(response)))
+                        size_t sent = 0;
+                        while (sent < sizeof(response))
+                        {
+                            const auto count = write(new_socket, reinterpret_cast<const uint8_t *>(&response) + sent,
+                                                     sizeof(response) - sent);
+                            if (count < 0 && errno == EINTR)
+                                continue;
+                            if (count <= 0)
+                                break;
+                            sent += count;
+                        }
+                        if (sent != sizeof(response))
                             printf("Unable to send response back to server.");
                     }
                     catch(const std::exception& e)
@@ -460,11 +589,12 @@ public:
                         std::cerr << e.what() << '\n';
                     }
                 }
-            } while (true);
+            } while (!_stopping.load());
 
-            close(new_socket);
+            CloseClient(new_socket);
             ResetReadBuffer();
-            std::this_thread::sleep_for(std::chrono::milliseconds(kSocketRetryDelay));
+            if (!_stopping.load())
+                std::this_thread::sleep_for(kSocketRetryDelay);
         }
         return true;
     }
@@ -516,15 +646,18 @@ public:
             }
             if (ret == Z_BUF_ERROR) 
             {
-                // Buffer error, not necessarily fatal, but output buffer may be too small
-                printf("Buffer error during decompression. Possibly insufficient output buffer size.\n");
+                // No progress is possible with these fixed input/output spans.
+                printf("Buffer error during decompression.\n");
+                inflateEnd(&stream);
+                return false;
             }
         } while (ret != Z_STREAM_END);
 
         // Ensure the decompressed size matches the expected size
-        if (stream.total_out != outputBuffer.size()) 
+        if (stream.total_out != outputBuffer.size() || stream.avail_in != 0)
         {
-            printf("Expected %zu bytes, but decompressed to %lu bytes instead\n", outputBuffer.size(), stream.total_out);
+            printf("Invalid decompressed frame: expected %zu bytes, got %lu with %u trailing input bytes\n",
+                   outputBuffer.size(), stream.total_out, stream.avail_in);
             inflateEnd(&stream);
             return false;
         }

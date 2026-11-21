@@ -1,0 +1,13 @@
+{
+  "hostName": "nightdriver-pi.local",
+  "friendlyName": "Colorlight wall via Pi",
+  "port": 49152,
+  "width": 256,
+  "height": 64,
+  "offsetX": 0,
+  "offsetY": 0,
+  "reversed": false,
+  "channel": 0,
+  "redGreenSwap": false,
+  "clientBufferCount": 500
+}

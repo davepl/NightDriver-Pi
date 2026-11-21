@@ -1,0 +1,28 @@
+{
+  "width": 512,
+  "height": 32,
+  "output": {
+    "type": "colorlight",
+    "interface": "en35",
+    "firmware_profile": "v13",
+    "brightness": 255,
+    "color_order": "BGR",
+    "flip_x": true,
+    "flip_y": false,
+    "refresh_hz": 60,
+    "duplicate_pixel_packets": false,
+    "sync_gap_us": 500,
+    "max_pixels_per_packet": 497,
+    "receivers": [
+      {
+        "index": 0,
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 32
+      }
+    ],
+    "sync_packet_count": 1,
+    "prepare_ahead_us": 2000
+  }
+}

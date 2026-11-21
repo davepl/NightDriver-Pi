@@ -1,0 +1,31 @@
+[Unit]
+Description=NightDriver-Pi Colorlight matrix output
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+DynamicUser=yes
+WorkingDirectory=/opt/ndpi
+Environment=NDPI_CONFIG=/etc/ndpi/colorlight.json
+ExecStartPre=/opt/ndpi/bin/apply-colorlight-ram.sh
+ExecStart=/opt/ndpi/bin/ndpi --output=colorlight --config=${NDPI_CONFIG} --port=49152
+Restart=always
+RestartSec=5
+CPUWeight=1000
+TimerSlackNSec=1
+TimeoutStartSec=60
+TimeoutStopSec=15
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_PACKET AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

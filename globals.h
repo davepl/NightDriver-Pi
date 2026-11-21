@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <bit>
 
 constexpr auto WIFI_COMMAND_PIXELDATA64 = 3;             // Wifi command with color data and 64-bit clock vals
 constexpr auto WIFI_COMMAND_PEAKDATA    = 4;             // Wifi command that delivers audio peaks
@@ -25,27 +24,21 @@ constexpr auto kMaxBuffers                = 500;
 
 constexpr uint64_t ULONGFromMemory(const uint8_t * payloadData)
 {
-    const auto result = *(uint64_t *)payloadData;
-    if constexpr (std::endian::native == std::endian::little) 
-        return result;                      // Already little-endian, no swap needed
-    else 
-        return __builtin_bswap64(result);   // Swap for big-endian systems
+    uint64_t result = 0;
+    for (unsigned i = 0; i < 8; ++i)
+        result |= uint64_t(payloadData[i]) << (8 * i);
+    return result;
 }
 
 constexpr uint32_t DWORDFromMemory(const uint8_t * payloadData)
 {
-    const auto result = *(uint32_t *)payloadData;
-    if constexpr (std::endian::native == std::endian::little) 
-        return result;                      // Already little-endian, no swap needed
-    else 
-        return __builtin_bswap32(result);   // Swap for big-endian systems
+    uint32_t result = 0;
+    for (unsigned i = 0; i < 4; ++i)
+        result |= uint32_t(payloadData[i]) << (8 * i);
+    return result;
 }
 
 constexpr uint16_t WORDFromMemory(const uint8_t * payloadData)
 {
-    const auto result = *(uint16_t *)payloadData;
-    if constexpr (std::endian::native == std::endian::little) 
-        return result;                      // Already little-endian, no swap needed
-    else 
-        return __builtin_bswap16(result);   // Swap for big-endian systems
+    return uint16_t(payloadData[0]) | (uint16_t(payloadData[1]) << 8);
 }

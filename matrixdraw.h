@@ -29,113 +29,123 @@
 //---------------------------------------------------------------------------
 #pragma once
 
-#include "led-matrix.h"     // Raspberry Pi LED Matrix library
-#include "ledbuffer.h"      // The LED circular buffer manager
-#include <thread>           // For spawning threads
-#include <chrono>           // Time and delays
+#include "displayoutput.h"
+#include "ledbuffer.h"
+#include <algorithm>
+#include <atomic>
+#include <csignal>
+#include <thread>
+#include <chrono>
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+#endif
 
-using rgb_matrix::RGBMatrix;
-
-extern volatile bool interrupt_received;
+extern std::atomic<std::sig_atomic_t> interrupt_received;
 
 class MatrixDraw
 {
-    static double _FPS;
-
-  protected:
-	
-    // DrawFrame
-    //
-    // Draws a frame's worth of color data to an offscreen canvas.
-	
-    static void DrawFrame(std::unique_ptr<LEDBuffer> & buffer, rgb_matrix::FrameCanvas & canvas)
-    {
-        static double lastTime = 0.0;
-        double currentTime = CAppTime::CurrentTime();
-        double delta = currentTime - lastTime + DBL_EPSILON;        // Add epsilon to avoid divide by zero
-        lastTime = currentTime;
-        _FPS =  1.0 / delta;
-
-        const size_t width = canvas.width();
-        const size_t height = canvas.height();
-        const size_t numpixels = width * height;
-        const auto & colorData = buffer->ColorData();
-
-        // TODO: This code could center a smaller buffer on the matrix or scale it up to fill the matrix
-        //       if the matrix is larger than the frame, but for now, we just require that the frames being
-        //       sent are the same size as the matrix.
-
-        if (colorData.size() != numpixels)
-            throw std::runtime_error("Frame size does not match matrix size");
-	            
-        // Process the entire frame in a single loop for better cache locality.
-        // Framebuffer::SetPixel() updates packed bitplane words, so avoid parallel writes here.
-
-        for (size_t idx = 0; idx < numpixels; ++idx)
-        {
-            const int x = idx % width;
-            const int y = idx / width;
-
-            // Get the pixel color
-            const CRGB color = colorData[idx];
-
-            // Set the pixel in the matrix (x is flipped)
-            canvas.SetPixel(canvas.width() - 1 - x, y, color.r, color.g, color.b);
-        }
-    }
+    // Status packets carry whole FPS. A 32-bit atomic also avoids requiring
+    // 64-bit atomic runtime helpers on older, 32-bit Raspberry Pi builds.
+    inline static std::atomic<uint32_t> _FPS = 0;
 
   public:
+    static double FPS() { return _FPS.load(std::memory_order_relaxed); }
 
-    // FPS
-    // 
-    // The framerate as of the last drawing operation
-
-    static double FPS()
+    // Timestamp scheduling is common to every output. HUB75 Present blocks on
+    // VSync; Colorlight completes all row packets before its display sequence.
+    static bool RunDrawLoop(LEDBufferManager & bufferManager, DisplayOutput & output)
     {
-        return _FPS;
-    }
+        using Clock = std::chrono::steady_clock;
+        const auto refreshInterval = output.RefreshPeriod();
+        const auto preparationLead = output.PreparationLeadTime();
+        auto nextRefresh = Clock::now() + refreshInterval;
+        auto lastFrame = Clock::now();
+        constexpr auto maximumWait = std::chrono::microseconds(40000);
 
-    // RunDrawLoop
-    // 
-    // Loops looking for frames that have matured on the buffer manager, then drawing them on the matrix as they do
-
-    static bool RunDrawLoop(LEDBufferManager & bufferManager, RGBMatrix & matrix)
-    {
-        rgb_matrix::FrameCanvas * offscreenCanvas = matrix.CreateFrameCanvas();
-        if (offscreenCanvas == nullptr)
-            throw std::runtime_error("Unable to create offscreen matrix canvas");
-
-        // If set to true, this will cause backlogged frames to be discarded.  If false, they will be drawn
-        // as fast as possible to catch up to the current time
-        constexpr auto burnExtraFrames = false;
-
-        // How long to wait (micros) when no frames available in the buffer (about 1/24th of a second).  Can't be
-        // too long, as if frames come in it will take that long to catch up.  But can't be too short, as it would
-        // burn too much CPU spinning in a tight loop.  So this is a compromise that seems appropriate for video.
-
-        constexpr auto kMaximumWait = 40000.0;  
-
-        while (!interrupt_received)
+        while (!interrupt_received.load(std::memory_order_relaxed))
         {
-            while (bufferManager.AgeOfOldestBuffer() <= 0)
+            auto Present = [&](const LEDBuffer & buffer)
             {
-                std::optional<std::unique_ptr<LEDBuffer>> buffer = bufferManager.PopOldestBuffer();
-                if (!buffer.has_value())
-                    continue;
-
-                if (burnExtraFrames && bufferManager.AgeOfOldestBuffer() <= 0)
-                    continue;
-
-                DrawFrame(buffer.value(), *offscreenCanvas);
-
-                offscreenCanvas = matrix.SwapOnVSync(offscreenCanvas);
-                if (offscreenCanvas == nullptr)
-                    throw std::runtime_error("SwapOnVSync failed");
+                output.Present(buffer.ColorData());
+                const auto now = Clock::now();
+                const double delta = std::chrono::duration<double>(now - lastFrame).count();
+                if (delta > 0)
+                    _FPS.store(static_cast<uint32_t>(std::min(1.0 / delta, double(UINT32_MAX))),
+                               std::memory_order_relaxed);
+                lastFrame = now;
+            };
+            auto now = Clock::now();
+            if (refreshInterval.count() > 0)
+            {
+                // Upload before the deadline; only the latch belongs on it.
+                if (now >= nextRefresh - preparationLead)
+                {
+                    if (now >= nextRefresh + refreshInterval)
+                        nextRefresh += refreshInterval * ((now - nextRefresh) / refreshInterval);
+                    const double latchTime = CAppTime::CurrentTime() +
+                        std::chrono::duration<double>(nextRefresh - Clock::now()).count();
+                    auto newest = bufferManager.PopNewestBufferDueAt(latchTime);
+                    if (interrupt_received.load(std::memory_order_relaxed)) break;
+                    if (newest)
+                    {
+                        output.PresentAt(newest->ColorData(), nextRefresh);
+                        const auto presented = Clock::now();
+                        const double delta = std::chrono::duration<double>(presented - lastFrame).count();
+                        if (delta > 0)
+                            _FPS.store(static_cast<uint32_t>(std::min(1.0 / delta, double(UINT32_MAX))), std::memory_order_relaxed);
+                        lastFrame = presented;
+                    }
+                    else output.RefreshAt(nextRefresh);
+                    now = Clock::now();
+                    nextRefresh += refreshInterval;
+                    if (nextRefresh <= now)
+                        nextRefresh += refreshInterval * ((now - nextRefresh) / refreshInterval + 1);
+                }
             }
-            const int64_t delay = std::min(kMaximumWait, bufferManager.AgeOfOldestBuffer() * MICROS_PER_SECOND);
-            if (delay > 0)
-                std::this_thread::sleep_for(std::chrono::microseconds(delay));
+            else
+            {
+                // HUB75 provides its own VSync and retains the existing policy.
+                while (!interrupt_received.load(std::memory_order_relaxed) &&
+                       bufferManager.AgeOfOldestBuffer() <= 0)
+                {
+                    auto buffer = bufferManager.PopOldestBuffer();
+                    if (!buffer) break;
+                    Present(**buffer);
+                }
+                now = Clock::now();
+            }
+            if (interrupt_received.load(std::memory_order_relaxed)) break;
+            auto delay = maximumWait;
+            const double age = bufferManager.AgeOfOldestBuffer();
+            if (refreshInterval.count() > 0)
+            {
+                // New arrivals wait for the next tick, even when already due.
+                delay = std::min(delay, std::max(std::chrono::microseconds::zero(),
+                    std::chrono::duration_cast<std::chrono::microseconds>(nextRefresh - preparationLead - now)));
+            }
+            else
+            {
+                // Clamp before converting: an empty queue returns DBL_MAX.
+                if (age <= 0) continue;
+                if (age < 0.04)
+                    delay = std::chrono::microseconds(static_cast<int64_t>(age * MICROS_PER_SECOND));
+            }
+#ifdef __APPLE__
+            if (refreshInterval.count() > 0 && delay.count() > 0)
+            {
+                static const auto timebase = []
+                {
+                    mach_timebase_info_data_t value{};
+                    mach_timebase_info(&value);
+                    return value;
+                }();
+                const auto ticks = uint64_t(delay.count()) * 1000 * timebase.denom / timebase.numer;
+                mach_wait_until(mach_absolute_time() + ticks);
+            }
+            else
+#endif
+                std::this_thread::sleep_for(delay);
         }
-	    return true;
+        return true;
     }
 };

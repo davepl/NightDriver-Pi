@@ -2,3 +2,7 @@
 *.d
 ndpi
 
+build/
+receiver-backups/
+__pycache__/
+*.py[cod]

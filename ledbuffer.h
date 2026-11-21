@@ -39,10 +39,13 @@
 #include <mutex>
 #include <optional>
 #include <span>
-#include "values.h"
+#include <cfloat>
+#include <vector>
 #include "globals.h"
 #include "pixeltypes.h"
 #include "apptime.h"
+
+static_assert(sizeof(CRGB) == 3, "NightDriver pixels must be exactly three RGB bytes");
 
 // A custom exception that is thrown if data can't be parsed from the wire
 
@@ -63,7 +66,7 @@ class LEDBuffer
 
   private:
 
-    std::deque<CRGB> _leds;
+    std::vector<CRGB> _leds;
     const uint64_t    _timeStampMicroseconds;
     const uint64_t    _timeStampSeconds;
 
@@ -83,7 +86,7 @@ class LEDBuffer
     constexpr uint64_t Seconds()      const  { return _timeStampSeconds;      }
     constexpr uint64_t MicroSeconds() const  { return _timeStampMicroseconds; }
     
-    const std::deque<CRGB> & ColorData() const
+    const std::vector<CRGB> & ColorData() const
     {
         return _leds;
     }
@@ -92,7 +95,7 @@ class LEDBuffer
     //
     // Parse a frame from the WiFi data and return it as a constructed LEDBuffer object
     
-    static std::unique_ptr<LEDBuffer> CreateFromWire(std::span<const uint8_t> payload)   
+    static std::unique_ptr<LEDBuffer> CreateFromWire(std::span<const uint8_t> payload, size_t expectedPixels)
     {
         const     auto payloadData = payload.data();
         const     auto payloadLength = payload.size();
@@ -111,8 +114,13 @@ class LEDBuffer
 
         constexpr size_t cbHeader = sizeof(command16) + sizeof(channel16) + sizeof(length32) + sizeof(seconds) + sizeof(micros);
 
-        if (payloadLength < length32 * sizeof(CRGB) + cbHeader)
-            throw LEDBufferException("Data size mismatch: insufficient data for expected length");
+        // Geometry comes from the selected local output, never from the wire.
+        // Divide first so malicious pixel counts cannot overflow on 32-bit Pi.
+        if (command16 != WIFI_COMMAND_PIXELDATA64 || length32 != expectedPixels)
+            throw LEDBufferException("Frame pixel count does not match configured display geometry");
+        if ((payloadLength - cbHeader) / sizeof(CRGB) != length32 ||
+            (payloadLength - cbHeader) % sizeof(CRGB) != 0)
+            throw LEDBufferException("Frame payload size does not match pixel count");
 
         // Create and return a new LEDBuffer object by passing in the CRGB color data, length, and timestamp
         return std::make_unique<LEDBuffer>(reinterpret_cast<const CRGB *>(&payloadData[cbHeader]), length32, seconds, micros);
@@ -145,7 +153,24 @@ public:
             const auto & pOldest = _buffers.front().get();
             return (pOldest->Seconds() + pOldest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
-        return MAXDOUBLE;
+        return DBL_MAX;
+    }
+
+    // Atomically select the newest frame due at the intended latch time.
+    // Early pixel preparation must not select by its earlier wake-up time.
+    std::unique_ptr<LEDBuffer> PopNewestBufferDueAt(double deadline)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        std::unique_ptr<LEDBuffer> newest;
+        while (!_buffers.empty())
+        {
+            const auto & front = _buffers.front();
+            const double due = front->Seconds() + front->MicroSeconds() / double(MICROS_PER_SECOND);
+            if (due > deadline) break;
+            newest = std::move(_buffers.front());
+            _buffers.pop_front();
+        }
+        return newest;
     }
 
     double AgeOfNewestBuffer() const
@@ -157,7 +182,7 @@ public:
             const auto & pNewest = _buffers.back();
             return (pNewest->Seconds() + pNewest->MicroSeconds() / (double)MICROS_PER_SECOND) - CAppTime::CurrentTime();
         }
-        return MAXDOUBLE;
+        return DBL_MAX;
     }
 
     constexpr size_t Capacity() const
@@ -167,6 +192,7 @@ public:
 
     size_t Size() const
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         return _buffers.size();
     }
 

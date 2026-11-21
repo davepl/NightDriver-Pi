@@ -1,0 +1,19 @@
+{
+  "width": 256,
+  "height": 64,
+  "output": {
+    "type": "colorlight",
+    "interface": "eth0",
+    "firmware_profile": "v13",
+    "brightness": 255,
+    "color_order": "RGB",
+    "flip_x": false,
+    "flip_y": false,
+    "refresh_hz": 30,
+    "sync_gap_us": 500,
+    "receivers": [
+      { "index": 0, "x": 0, "y": 0, "width": 128, "height": 64 },
+      { "index": 1, "x": 128, "y": 0, "width": 128, "height": 64 }
+    ]
+  }
+}
